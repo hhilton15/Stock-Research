@@ -3,7 +3,27 @@ import yfinance as yf
 import pandas as pd
 
 # Page Configuration
-st.set_page_config(page_title="Stock Analysis Dashboard", page_icon="📈", layout="wide")
+st.set_page_config(
+    page_title="Stock Analysis Dashboard", 
+    page_icon="📈", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS styling for metric card highlights and cleaner spacing
+st.markdown("""
+<style>
+    .stMetric {
+        background-color: rgba(150, 150, 150, 0.05);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid rgba(150, 150, 150, 0.1);
+    }
+    div[data-testid="stSidebar"] {
+        padding-top: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 def smart_format(val):
     if pd.isna(val) or val is None:
@@ -26,6 +46,8 @@ def find_row_flexible(df, keywords):
 # Sidebar Ticker Input
 st.sidebar.title("🔍 Stock Lookup")
 ticker_input = st.sidebar.text_input("Enter Ticker Symbol", value="AAPL").upper()
+st.sidebar.markdown("---")
+st.sidebar.caption("Data provided via Yahoo Finance (`yfinance`)")
 
 if ticker_input:
     ticker = yf.Ticker(ticker_input)
@@ -34,7 +56,7 @@ if ticker_input:
     current_price = info.get('currentPrice') or info.get('regularMarketPrice')
     name_str = info.get('longName', ticker_input)
 
-    # Header section
+    # Top Header Banner
     col_head1, col_head2 = st.columns([3, 1])
     with col_head1:
         st.title(f"{name_str} ({ticker_input})")
@@ -45,7 +67,7 @@ if ticker_input:
 
     st.markdown("---")
 
-    # Fetch Metrics
+    # Key Financial Metrics
     trailing_pe = info.get('trailingPE')
     forward_pe_1y = info.get('forwardPE')
     trailing_eps = info.get('trailingEps')
@@ -74,77 +96,99 @@ if ticker_input:
 
     forward_pe_2y = (current_price / eps_2y_avg) if (current_price and eps_2y_avg and eps_2y_avg > 0) else None
 
-    # Key Metrics Grid
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Trailing P/E", f"{trailing_pe:.2f}x" if trailing_pe else "N/A")
-    m2.metric("1-Yr Forward P/E", f"{forward_pe_1y:.2f}x" if forward_pe_1y else "N/A")
-    m3.metric("2-Yr Forward P/E", f"{forward_pe_2y:.2f}x" if forward_pe_2y else "N/A")
-    m4.metric("PEG Ratio", f"{peg_ratio:.2f}" if peg_ratio else "N/A")
+    # Tabbed Dashboard Layout
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Key Valuation", 
+        "💰 Profitability & Debt", 
+        "🎯 Bull & Bear Insights", 
+        "📈 Quarterly Trends"
+    ])
 
-    m5, m6, m7, m8 = st.columns(4)
-    m5.metric("Gross Margin", f"{gross_margins * 100:.2f}%" if gross_margins else "N/A")
-    m6.metric("Operating Margin", f"{operating_margins * 100:.2f}%" if operating_margins else "N/A")
-    m7.metric("Net Profit Margin", f"{profit_margins * 100:.2f}%" if profit_margins else "N/A")
-    m8.metric("Debt-to-Equity", f"{debt_to_equity:.2f}%" if debt_to_equity else "N/A")
+    with tab1:
+        st.subheader("Valuation Metrics")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Trailing P/E", f"{trailing_pe:.2f}x" if trailing_pe else "N/A")
+        m2.metric("1-Yr Forward P/E", f"{forward_pe_1y:.2f}x" if forward_pe_1y else "N/A")
+        m3.metric("2-Yr Forward P/E", f"{forward_pe_2y:.2f}x" if forward_pe_2y else "N/A")
+        m4.metric("PEG Ratio", f"{peg_ratio:.2f}" if peg_ratio else "N/A")
 
-    st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("52-Week Range", f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}" if fifty_two_low and fifty_two_high else "N/A")
+        c2.metric("Analyst Target Price", f"${analyst_target:,.2f}" if analyst_target else "N/A")
+        c3.metric("Dividend Yield", f"{dividend_yield * 100:.2f}%" if dividend_yield else "N/A")
 
-    # Automated Bull & Bear Insights
-    bulls, bears = [], []
-    if profit_margins and profit_margins > 0.15:
-        bulls.append(f"High bottom-line profitability with a net margin of {profit_margins*100:.1f}%.")
-    elif profit_margins and profit_margins > 0:
-        bulls.append(f"Positive net profit margin of {profit_margins*100:.1f}%.")
-    else:
-        bears.append("Thin or negative net profit margins indicate earnings pressure.")
+    with tab2:
+        st.subheader("Profitability & Leverage")
+        m5, m6, m7, m8 = st.columns(4)
+        m5.metric("Gross Margin", f"{gross_margins * 100:.2f}%" if gross_margins else "N/A")
+        m6.metric("Operating Margin", f"{operating_margins * 100:.2f}%" if operating_margins else "N/A")
+        m7.metric("Net Profit Margin", f"{profit_margins * 100:.2f}%" if profit_margins else "N/A")
+        m8.metric("Debt-to-Equity", f"{debt_to_equity:.2f}%" if debt_to_equity else "N/A")
 
-    if rev_growth_current and rev_growth_current > 0.08:
-        bulls.append(f"Healthy YoY revenue growth of {rev_growth_current*100:.1f}%.")
-    elif rev_growth_current and rev_growth_current < 0:
-        bears.append(f"Negative YoY revenue contraction of {rev_growth_current*100:.1f}%.")
+    with tab3:
+        # Automated Bull & Bear Insights
+        bulls, bears = [], []
+        if profit_margins and profit_margins > 0.15:
+            bulls.append(f"High bottom-line profitability with a net margin of {profit_margins*100:.1f}%.")
+        elif profit_margins and profit_margins > 0:
+            bulls.append(f"Positive net profit margin of {profit_margins*100:.1f}%.")
+        else:
+            bears.append("Thin or negative net profit margins indicate earnings pressure.")
 
-    if debt_to_equity and debt_to_equity > 150:
-        bears.append(f"Elevated debt ratio of {debt_to_equity:.1f}%.")
-    else:
-        bulls.append("Manageable debt load relative to equity.")
+        if rev_growth_current and rev_growth_current > 0.08:
+            bulls.append(f"Healthy YoY revenue growth of {rev_growth_current*100:.1f}%.")
+        elif rev_growth_current and rev_growth_current < 0:
+            bears.append(f"Negative YoY revenue contraction of {rev_growth_current*100:.1f}%.")
 
-    while len(bulls) < 3: bulls.append("Consistent core operational performance.")
-    while len(bears) < 3: bears.append("Macroeconomic headwinds could impact guidance.")
+        if debt_to_equity and debt_to_equity > 150:
+            bears.append(f"Elevated debt ratio of {debt_to_equity:.1f}%.")
+        else:
+            bulls.append("Manageable debt load relative to equity.")
 
-    col_bull, col_bear = st.columns(2)
-    with col_bull:
-        st.subheader("🟢 Bull Case Tailwinds")
-        for b in bulls[:3]:
-            st.success(f"• {b}")
+        while len(bulls) < 3: bulls.append("Consistent core operational performance.")
+        while len(bears) < 3: bears.append("Macroeconomic headwinds could impact guidance.")
+
+        col_bull, col_bear = st.columns(2)
+        with col_bull:
+            st.subheader("🟢 Bull Case Tailwinds")
+            for b in bulls[:3]:
+                st.success(f"• {b}")
+                
+        with col_bear:
+            st.subheader("🔴 Bear Case Headwinds")
+            for b in bears[:3]:
+                st.error(f"• {b}")
+
+    with tab4:
+        st.subheader("Recent Quarterly Net Margin Trend")
+        quarterly_net_margins = []
+        try:
+            q_financials = ticker.quarterly_financials
+            if q_financials is not None and not q_financials.empty:
+                net_income_row = find_row_flexible(q_financials, ['net income'])
+                revenue_row = find_row_flexible(q_financials, ['total revenue', 'revenue'])
+                if net_income_row is not None and revenue_row is not None:
+                    for date in q_financials.columns[:8]:
+                        ni = q_financials.loc[net_income_row, date]
+                        rev = q_financials.loc[revenue_row, date]
+                        if pd.notna(ni) and pd.notna(rev) and rev != 0:
+                            quarterly_net_margins.append({
+                                'Quarter Ending': pd.to_datetime(date).strftime('%b %Y'),
+                                'Net Margin (%)': round((ni / rev) * 100, 2)
+                            })
+        except Exception:
+            st.warning("Could not retrieve quarterly margins.")
+
+        if quarterly_net_margins:
+            df_margins = pd.DataFrame(quarterly_net_margins)
             
-    with col_bear:
-        st.subheader("🔴 Bear Case Headwinds")
-        for b in bears[:3]:
-            st.error(f"• {b}")
+            # Displays the line chart and table cleanly side by side
+            col_chart, col_table = st.columns([2, 1])
+            with col_chart:
+                chart_data = df_margins.set_index('Quarter Ending')
+                st.line_chart(chart_data)
+            with col_table:
+                # Replaced deprecated use_container_width with width='stretch'
+                st.dataframe(df_margins, width='stretch')
 
-    st.markdown("---")
-
-    # Quarterly Financials & Margin Trend
-    st.subheader("📊 Recent Quarterly Net Margin Trend")
-    quarterly_net_margins = []
-    try:
-        q_financials = ticker.quarterly_financials
-        if q_financials is not None and not q_financials.empty:
-            net_income_row = find_row_flexible(q_financials, ['net income'])
-            revenue_row = find_row_flexible(q_financials, ['total revenue', 'revenue'])
-            if net_income_row is not None and revenue_row is not None:
-                for date in q_financials.columns[:8]:
-                    ni = q_financials.loc[net_income_row, date]
-                    rev = q_financials.loc[revenue_row, date]
-                    if pd.notna(ni) and pd.notna(rev) and rev != 0:
-                        quarterly_net_margins.append({
-                            'Quarter Ending': pd.to_datetime(date).strftime('%b %Y'),
-                            'Net Margin (%)': round((ni / rev) * 100, 2)
-                        })
-    except Exception as e:
-        st.write("Could not retrieve quarterly margins.")
-
-    if quarterly_net_margins:
-        df_margins = pd.DataFrame(quarterly_net_margins)
-        st.dataframe(df_margins, use_container_width=True)
-        st.line_chart(df_margins.set_index('Quarter Ending'))
