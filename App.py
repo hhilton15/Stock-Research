@@ -62,6 +62,22 @@ def find_row_flexible(df, keywords):
     return None
 
 
+def find_revenue_row(df):
+    """Specifically targets Total Revenue while ignoring Cost of Revenue, Tax, etc."""
+    for row in df.index:
+        r_low = str(row).lower()
+        if any(bad in r_low for bad in ["cost", "tax", "other", "operating expense"]):
+            continue
+        if "total revenue" in r_low or r_low == "revenue" or "operating revenue" in r_low:
+            return row
+    # Fallback
+    for row in df.index:
+        r_low = str(row).lower()
+        if "revenue" in r_low and "cost" not in r_low:
+            return row
+    return None
+
+
 def extract_estimate_growth(df, period_key):
     """Safely extracts forward growth decimal from yfinance estimate DataFrames."""
     if df is not None and not df.empty:
@@ -242,18 +258,15 @@ if ticker_input:
             try:
                 q_fin = ticker.quarterly_financials
                 if q_fin is not None and not q_fin.empty:
-                    rev_row = find_row_flexible(q_fin, ["total revenue", "revenue"])
+                    rev_row = find_revenue_row(q_fin)
                     eps_row = find_row_flexible(q_fin, ["basic eps", "diluted eps"])
                     ni_row = find_row_flexible(q_fin, ["net income"])
                     shares_row = find_row_flexible(
                         q_fin, ["basic average shares", "diluted average shares"]
                     )
 
-                    # Sort columns chronologically oldest -> newest
                     q_fin_sorted = q_fin.reindex(sorted(q_fin.columns), axis=1)
                     cols = list(q_fin_sorted.columns)
-
-                    # Extract the last 4 available quarters
                     recent_cols = cols[-4:] if len(cols) >= 4 else cols
 
                     for col in recent_cols:
@@ -410,7 +423,7 @@ if ticker_input:
                 q_fin = ticker.quarterly_financials
                 if q_fin is not None and not q_fin.empty:
                     ni_row = find_row_flexible(q_fin, ["net income"])
-                    rev_row = find_row_flexible(q_fin, ["total revenue", "revenue"])
+                    rev_row = find_revenue_row(q_fin)
                     if ni_row and rev_row:
                         for date in q_fin.columns[:4]:
                             ni = q_fin.loc[ni_row, date]
