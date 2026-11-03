@@ -236,8 +236,9 @@ if ticker_input:
         with tab2:
             st.subheader("Revenue & EPS Growth Projections")
 
-            st.markdown("##### Recent Quarterly Performance (Last 4 Quarters)")
-            q_growth_data = []
+            rev_table_data = []
+            eps_table_data = []
+
             try:
                 q_fin = ticker.quarterly_financials
                 if q_fin is not None and not q_fin.empty:
@@ -254,18 +255,10 @@ if ticker_input:
                         date_dt = pd.to_datetime(curr_col)
                         q_date_str = date_dt.strftime("%b %Y")
 
+                        # --- Revenue Data ---
                         rev_val = None
                         if rev_row and pd.notna(q_fin.loc[rev_row, curr_col]):
                             rev_val = q_fin.loc[rev_row, curr_col]
-
-                        eps_val = None
-                        if eps_row and pd.notna(q_fin.loc[eps_row, curr_col]):
-                            eps_val = q_fin.loc[eps_row, curr_col]
-                        elif ni_row and shares_row:
-                            ni = q_fin.loc[ni_row, curr_col]
-                            sh = q_fin.loc[shares_row, curr_col]
-                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
-                                eps_val = ni / sh
 
                         qoq_rev = None
                         next_col_idx = i + 1
@@ -278,28 +271,76 @@ if ticker_input:
                             ):
                                 qoq_rev = (rev_val - prev_rev) / abs(prev_rev)
 
-                        q_growth_data.append({
+                        rev_table_data.append({
                             "Quarter Ending": q_date_str,
                             "Revenue": smart_format(rev_val),
-                            "Revenue QoQ": (
+                            "Revenue QoQ Growth": (
                                 f"{qoq_rev * 100:.2f}%"
                                 if qoq_rev is not None
                                 else "N/A"
                             ),
+                        })
+
+                        # --- EPS Data ---
+                        eps_val = None
+                        if eps_row and pd.notna(q_fin.loc[eps_row, curr_col]):
+                            eps_val = q_fin.loc[eps_row, curr_col]
+                        elif ni_row and shares_row:
+                            ni = q_fin.loc[ni_row, curr_col]
+                            sh = q_fin.loc[shares_row, curr_col]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                eps_val = ni / sh
+
+                        qoq_eps = None
+                        if next_col_idx < len(cols):
+                            prev_eps = None
+                            if eps_row and pd.notna(
+                                q_fin.loc[eps_row, cols[next_col_idx]]
+                            ):
+                                prev_eps = q_fin.loc[eps_row, cols[next_col_idx]]
+                            elif ni_row and shares_row:
+                                ni_p = q_fin.loc[ni_row, cols[next_col_idx]]
+                                sh_p = q_fin.loc[shares_row, cols[next_col_idx]]
+                                if pd.notna(ni_p) and pd.notna(sh_p) and sh_p > 0:
+                                    prev_eps = ni_p / sh_p
+
+                            if (
+                                prev_eps is not None
+                                and prev_eps != 0
+                                and eps_val is not None
+                            ):
+                                qoq_eps = (eps_val - prev_eps) / abs(prev_eps)
+
+                        eps_table_data.append({
+                            "Quarter Ending": q_date_str,
                             "EPS": (
                                 f"${eps_val:,.2f}"
                                 if eps_val is not None
+                                else "N/A"
+                            ),
+                            "EPS QoQ Growth": (
+                                f"{qoq_eps * 100:.2f}%"
+                                if qoq_eps is not None
                                 else "N/A"
                             ),
                         })
             except Exception:
                 pass
 
-            if q_growth_data:
-                df_qg = pd.DataFrame(q_growth_data)
-                st.dataframe(df_qg, use_container_width=True, hide_index=True)
+            st.markdown("##### Recent Quarterly Revenue Performance")
+            if rev_table_data:
+                df_rev = pd.DataFrame(rev_table_data)
+                st.dataframe(df_rev, use_container_width=True, hide_index=True)
             else:
-                st.info("Recent quarterly performance data unavailable.")
+                st.info("Quarterly revenue data unavailable.")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("##### Recent Quarterly EPS Performance")
+            if eps_table_data:
+                df_eps = pd.DataFrame(eps_table_data)
+                st.dataframe(df_eps, use_container_width=True, hide_index=True)
+            else:
+                st.info("Quarterly EPS data unavailable.")
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("##### Forward Analyst Expectations")
