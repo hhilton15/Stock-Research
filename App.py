@@ -10,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS styling for metric card highlights and cleaner spacing
+# Custom CSS styling for metric card highlights
 st.markdown("""
 <style>
     .stMetric {
@@ -43,6 +43,15 @@ def find_row_flexible(df, keywords):
             return row
     return None
 
+def extract_growth(df, period_key):
+    """Safely extracts growth percentage from DataFrame or dictionary."""
+    if df is not None and not df.empty:
+        if period_key in df.columns and 'growth' in df.index:
+            val = df.loc['growth', period_key]
+            if pd.notna(val):
+                return val
+    return None
+
 # Sidebar Ticker Input
 st.sidebar.title("🔍 Stock Lookup")
 ticker_input = st.sidebar.text_input("Enter Ticker Symbol", value="AAPL").upper()
@@ -73,10 +82,9 @@ if ticker_input:
     peg_ratio = info.get('pegRatio')
     debt_to_equity = info.get('debtToEquity')
     
-    # Robust Dividend Yield Calculation
+    # Dividend Yield
     div_rate = info.get('dividendRate')
     raw_div_yield = info.get('dividendYield') or info.get('trailingAnnualDividendYield')
-    
     if div_rate and current_price and current_price > 0:
         dividend_yield = (div_rate / current_price) * 100
     elif raw_div_yield is not None:
@@ -84,57 +92,52 @@ if ticker_input:
     else:
         dividend_yield = None
 
-    # Payout Ratio Calculation
+    # Payout Ratio
     raw_payout = info.get('payoutRatio')
-    if raw_payout is not None:
-        payout_ratio = raw_payout * 100 if raw_payout < 1 else raw_payout
-    else:
-        payout_ratio = None
+    payout_ratio = (raw_payout * 100 if raw_payout < 1 else raw_payout) if raw_payout is not None else None
 
     fifty_two_low = info.get('fiftyTwoWeekLow')
     fifty_two_high = info.get('fiftyTwoWeekHigh')
     analyst_target = info.get('targetMeanPrice')
     
-    # Growth metrics extraction
     rev_growth_current = info.get('revenueGrowth')
     eps_growth_current = info.get('earningsGrowth')
     
     profit_margins = info.get('profitMargins')
     gross_margins = info.get('grossMargins')
     operating_margins = info.get('operatingMargins')
+    free_cashflow = info.get('freeCashflow')
 
-    # Estimations (Revenue & EPS 1Y / 2Y)
-    rev_growth_1y = None
-    rev_growth_2y = None
-    eps_growth_1y = None
-    eps_growth_2y = None
+    # Estimates extraction with multi-path fallbacks
+    rev_growth_1y, rev_growth_2y = None, None
+    eps_growth_1y, eps_growth_2y = None, None
     eps_2y_avg = None
 
     try:
         rev_est = ticker.revenue_estimate
-        if rev_est is not None and not rev_est.empty:
-            if '+1y' in rev_est.columns and 'growth' in rev_est.index:
-                rev_growth_1y = rev_est.loc['growth', '+1y']
-            if '+2y' in rev_est.columns and 'growth' in rev_est.index:
-                rev_growth_2y = rev_est.loc['growth', '+2y']
+        rev_growth_1y = extract_growth(rev_est, '+1y')
+        rev_growth_2y = extract_growth(rev_est, '+2y')
     except Exception:
         pass
 
     try:
         earn_est = ticker.earnings_estimate
-        if earn_est is not None and not earn_est.empty:
-            if '+1y' in earn_est.columns and 'growth' in earn_est.index:
-                eps_growth_1y = earn_est.loc['growth', '+1y']
-            if '+2y' in earn_est.columns and 'growth' in earn_est.index:
-                eps_growth_2y = earn_est.loc['growth', '+2y']
-            if '+2y' in earn_est.index and 'avg' in earn_est.columns:
-                eps_2y_avg = earn_est.loc['+2y', 'avg']
+        eps_growth_1y = extract_growth(earn_est, '+1y')
+        eps_growth_2y = extract_growth(earn_est, '+2y')
+        if earn_est is not None and not earn_est.empty and '+2y' in earn_est.columns and 'avg' in earn_est.index:
+            eps_2y_avg = earn_est.loc['avg', '+2y']
     except Exception:
         pass
 
+    # Direct fallback logic for EPS & Revenue expectations if DataFrame calls return None
+    if eps_growth_1y is None and info.get('earningsQuarterlyGrowth'):
+        eps_growth_1y = info.get('earningsQuarterlyGrowth')
+    if rev_growth_1y is None and rev_growth_current:
+        rev_growth_1y = rev_growth_current
+
     forward_pe_2y = (current_price / eps_2y_avg) if (current_price and eps_2y_avg and eps_2y_avg > 0) else None
 
-    # Streamlined Tabbed Layout
+    # Tabbed Layout
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Valuation & Income", 
         "📈 Growth Metrics",
@@ -163,16 +166,16 @@ if ticker_input:
         
         st.markdown("##### Revenue Growth")
         g1, g2, g3 = st.columns(3)
-        g1.metric("Current Rev Growth (YoY)", f"{rev_growth_current * 100:.2f}%" if rev_growth_current else "N/A")
-        g2.metric("1-Yr Expected Rev Growth", f"{rev_growth_1y * 100:.2f}%" if rev_growth_1y else "N/A")
-        g3.metric("2-Yr Expected Rev Growth", f"{rev_growth_2y * 100:.2f}%" if rev_growth_2y else "N/A")
+        g1.metric("Current Rev Growth (YoY)", f"{rev_growth_current * 100:.2f}%" if rev_growth_current is not None else "N/A")
+        g2.metric("1-Yr Expected Rev Growth", f"{rev_growth_1y * 100:.2f}%" if rev_growth_1y is not None else "N/A")
+        g3.metric("2-Yr Expected Rev Growth", f"{rev_growth_2y * 100:.2f}%" if rev_growth_2y is not None else "N/A")
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("##### Earnings Per Share (EPS) Growth")
         g4, g5, g6 = st.columns(3)
-        g4.metric("Current EPS Growth (YoY)", f"{eps_growth_current * 100:.2f}%" if eps_growth_current else "N/A")
-        g5.metric("1-Yr Expected EPS Growth", f"{eps_growth_1y * 100:.2f}%" if eps_growth_1y else "N/A")
-        g6.metric("2-Yr Expected EPS Growth", f"{eps_growth_2y * 100:.2f}%" if eps_growth_2y else "N/A")
+        g4.metric("Current EPS Growth (YoY)", f"{eps_growth_current * 100:.2f}%" if eps_growth_current is not None else "N/A")
+        g5.metric("1-Yr Expected EPS Growth", f"{eps_growth_1y * 100:.2f}%" if eps_growth_1y is not None else "N/A")
+        g6.metric("2-Yr Expected EPS Growth", f"{eps_growth_2y * 100:.2f}%" if eps_growth_2y is not None else "N/A")
 
     with tab3:
         st.subheader("Profitability & Leverage")
@@ -246,24 +249,46 @@ if ticker_input:
             st.info("Quarterly net margin data unavailable.")
 
     with tab5:
-        # Automated Bull & Bear Insights
+        # Robust Bull & Bear Logic
         bulls, bears = [], []
-        if profit_margins and profit_margins > 0.15:
-            bulls.append(f"Strong profitability with a net profit margin of {profit_margins*100:.1f}%.")
-        elif profit_margins and profit_margins > 0:
-            bulls.append(f"Positive net profit margin of {profit_margins*100:.1f}%.")
-        else:
-            bears.append("Thin or negative net profit margins indicate potential earnings pressure.")
 
-        if rev_growth_current and rev_growth_current > 0.05:
-            bulls.append(f"Solid year-over-year revenue growth of {rev_growth_current*100:.1f}%.")
-        elif rev_growth_current and rev_growth_current < 0:
-            bears.append(f"Year-over-year revenue contraction of {rev_growth_current*100:.1f}%.")
+        # Profit Margin Rules
+        if profit_margins:
+            if profit_margins > 0.15:
+                bulls.append(f"Strong bottom-line profitability with a net profit margin of {profit_margins*100:.1f}%.")
+            elif profit_margins < 0.05:
+                bears.append(f"Compressed profitability with a low net profit margin of {profit_margins*100:.1f}%.")
 
-        if debt_to_equity and debt_to_equity > 150:
-            bears.append(f"Elevated financial leverage with a debt-to-equity ratio of {debt_to_equity:.1f}%.")
-        elif debt_to_equity:
-            bulls.append(f"Manageable debt load relative to equity (Debt/Equity: {debt_to_equity:.1f}%).")
+        # Revenue Growth Rules
+        if rev_growth_current:
+            if rev_growth_current > 0.05:
+                bulls.append(f"Solid YoY revenue growth momentum of {rev_growth_current*100:.1f}%.")
+            elif rev_growth_current < 0:
+                bears.append(f"Recent YoY revenue contraction of {rev_growth_current*100:.1f}%.")
+
+        # Valuation & Multiples Rules
+        if peg_ratio:
+            if peg_ratio > 2.5:
+                bears.append(f"Elevated PEG ratio of {peg_ratio:.2f} indicates potential growth-adjusted overvaluation.")
+            elif peg_ratio < 1.2:
+                bulls.append(f"Attractive PEG ratio of {peg_ratio:.2f} relative to growth rate.")
+
+        if trailing_pe and trailing_pe > 35:
+            bears.append(f"Trading at a premium multiple with a trailing P/E of {trailing_pe:.1f}x.")
+
+        # Debt & Balance Sheet Rules
+        if debt_to_equity:
+            if debt_to_equity > 150:
+                bears.append(f"Elevated debt exposure with a debt-to-equity ratio of {debt_to_equity:.1f}%.")
+            elif debt_to_equity < 50:
+                bulls.append(f"Conservative balance sheet with low leverage (Debt/Equity: {debt_to_equity:.1f}%).")
+
+        # Free Cash Flow Rules
+        if free_cashflow:
+            if free_cashflow > 0:
+                bulls.append(f"Strong cash generation with annual FCF of {smart_format(free_cashflow)}.")
+            else:
+                bears.append("Negative cash generation; burning free cash flow over the period.")
 
         col_bull, col_bear = st.columns(2)
         with col_bull:
@@ -272,7 +297,7 @@ if ticker_input:
                 for b in bulls:
                     st.success(f"• {b}")
             else:
-                st.info("No specific bullish flags triggered.")
+                st.info("No specific bullish metrics triggered.")
                 
         with col_bear:
             st.subheader("🔴 Bear Case Headwinds")
@@ -280,4 +305,4 @@ if ticker_input:
                 for b in bears:
                     st.error(f"• {b}")
             else:
-                st.info("No specific bearish flags triggered.")
+                st.info("No specific bearish metrics triggered.")
