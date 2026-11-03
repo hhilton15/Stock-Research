@@ -193,12 +193,13 @@ if ticker_input:
             else None
         )
 
-        # Tabbed Layout
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        # Tabbed Layout (6 Tabs total now)
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "📊 Valuation & Income",
             "📈 Growth Metrics",
             "💰 Profitability & Cash Flow",
             "📉 Quarterly Trends (4Q)",
+            "📉 Historical P/E",
             "🎯 Bull & Bear Insights",
         ])
 
@@ -235,62 +236,6 @@ if ticker_input:
                 "Payout Ratio",
                 f"{payout_ratio:.2f}%" if payout_ratio is not None else "N/A",
             )
-
-            # Historical P/E Ratio (Last 3 Years)
-            st.markdown("---")
-            st.markdown("##### Historical P/E Ratio (Last 3 Years)")
-            pe_history_data = []
-            try:
-                income_stmt = ticker.financials
-                history_prices = ticker.history(period="4y")
-
-                if (
-                    income_stmt is not None
-                    and not income_stmt.empty
-                    and not history_prices.empty
-                ):
-                    eps_row = find_row_flexible(
-                        income_stmt, ["basic eps", "diluted eps"]
-                    )
-                    shares_row = find_row_flexible(
-                        income_stmt, ["basic average shares", "diluted average shares"]
-                    )
-                    ni_row = find_row_flexible(income_stmt, ["net income"])
-
-                    for col_date in income_stmt.columns[:3]:
-                        date_dt = pd.to_datetime(col_date)
-                        year_str = date_dt.strftime("%Y")
-
-                        # Calculate EPS for the year
-                        eps_val = None
-                        if eps_row and pd.notna(income_stmt.loc[eps_row, col_date]):
-                            eps_val = income_stmt.loc[eps_row, col_date]
-                        elif ni_row and shares_row:
-                            ni = income_stmt.loc[ni_row, col_date]
-                            sh = income_stmt.loc[shares_row, col_date]
-                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
-                                eps_val = ni / sh
-
-                        # Find historical price near fiscal year-end
-                        hist_sub = history_prices.loc[:date_dt]
-                        if not hist_sub.empty and eps_val and eps_val > 0:
-                            close_p = hist_sub["Close"].iloc[-1]
-                            hist_pe = close_p / eps_val
-                            pe_history_data.append({
-                                "Year": year_str,
-                                "Fiscal Year End": date_dt.strftime("%b %d, %Y"),
-                                "Year-End Price": f"${close_p:,.2f}",
-                                "EPS": f"${eps_val:,.2f}",
-                                "Historical P/E": f"{hist_pe:.2f}x",
-                            })
-            except Exception:
-                pass
-
-            if pe_history_data:
-                df_pe = pd.DataFrame(pe_history_data)
-                st.dataframe(df_pe, use_container_width=True, hide_index=True)
-            else:
-                st.info("Historical P/E data for the last 3 years is unavailable.")
 
         with tab2:
             st.subheader("Revenue & EPS Growth Projections")
@@ -434,6 +379,84 @@ if ticker_input:
                 st.info("Quarterly net margin data unavailable.")
 
         with tab5:
+            st.subheader("Historical P/E Ratio (Last 3 Years)")
+            pe_history_data = []
+            try:
+                income_stmt = ticker.financials
+                # Download max available history to ensure coverage for past fiscal years
+                history_prices = ticker.history(period="max")
+
+                if (
+                    income_stmt is not None
+                    and not income_stmt.empty
+                    and not history_prices.empty
+                ):
+                    eps_row = find_row_flexible(
+                        income_stmt, ["basic eps", "diluted eps", "net income"]
+                    )
+                    shares_row = find_row_flexible(
+                        income_stmt, ["basic average shares", "diluted average shares"]
+                    )
+                    ni_row = find_row_flexible(income_stmt, ["net income"])
+
+                    for col_date in income_stmt.columns[:3]:
+                        date_dt = pd.to_datetime(col_date)
+                        year_str = date_dt.strftime("%Y")
+
+                        # Calculate EPS
+                        eps_val = None
+                        if eps_row and pd.notna(income_stmt.loc[eps_row, col_date]):
+                            val = income_stmt.loc[eps_row, col_date]
+                            # If row is net income instead of EPS, calculate per share if shares available
+                            if eps_row == ni_row and shares_row:
+                                sh = income_stmt.loc[shares_row, col_date]
+                                if pd.notna(sh) and sh > 0:
+                                    eps_val = val / sh
+                            else:
+                                eps_val = val
+                        elif ni_row and shares_row:
+                            ni = income_stmt.loc[ni_row, col_date]
+                            sh = income_stmt.loc[shares_row, col_date]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                eps_val = ni / sh
+
+                        # Fallback: if EPS is still missing or total net income was used incorrectly as per-share, check info or estimate
+                        if eps_val and eps_val > 50:  # Likely absolute net income rather than per share
+                            sh = (
+                                income_stmt.loc[shares_row, col_date]
+                                if shares_row
+                                else None
+                            )
+                            if sh and sh > 0:
+                                eps_val = eps_val / sh
+
+                        # Find historical closing price on or closest to fiscal year-end date
+                        hist_sub = history_prices.loc[:date_dt]
+                        if hist_sub.empty:
+                            hist_sub = history_prices  # Fallback to earliest available if date is out of range
+
+                        if not hist_sub.empty and eps_val and eps_val > 0:
+                            close_p = hist_sub["Close"].iloc[-1]
+                            hist_pe = close_p / eps_val
+                            pe_history_data.append({
+                                "Fiscal Year": year_str,
+                                "Fiscal Year End": date_dt.strftime("%b %d, %Y"),
+                                "Year-End Price": f"${close_p:,.2f}",
+                                "EPS": f"${eps_val:,.2f}",
+                                "Historical P/E": f"{hist_pe:.2f}x",
+                            })
+            except Exception as e:
+                pass
+
+            if pe_history_data:
+                df_pe = pd.DataFrame(pe_history_data)
+                st.dataframe(df_pe, use_container_width=True, hide_index=True)
+            else:
+                st.info(
+                    "Historical P/E data is currently unavailable for this ticker's annual filings."
+                )
+
+        with tab6:
             bulls, bears = [], []
 
             # Profit Margin Rules
