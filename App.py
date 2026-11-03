@@ -30,16 +30,16 @@ st.markdown(
 
 
 @st.cache_data(ttl=1800)
-def fetch_ticker_data(symbol):
-    """Fetch ticker object and info dictionary with caching to prevent Yahoo Finance rate limits."""
+def fetch_ticker_info(symbol):
+    """Fetch ticker info dictionary with caching to prevent Yahoo Finance rate limits."""
     try:
         t = yf.Ticker(symbol)
         info = t.info
         if not info or info.get("quoteType") is None:
-            return None, None
-        return t, info
+            return None
+        return info
     except Exception:
-        return None, None
+        return None
 
 
 def smart_format(val):
@@ -85,13 +85,15 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Data provided via Yahoo Finance (`yfinance`)")
 
 if ticker_input:
-    ticker, info = fetch_ticker_data(ticker_input)
+    info = fetch_ticker_info(ticker_input)
 
     if not info:
         st.error(
             f"Unable to retrieve data for ticker **'{ticker_input}'**. Please verify the symbol and try again."
         )
     else:
+        ticker = yf.Ticker(ticker_input)
+
         current_price = info.get("currentPrice") or info.get(
             "regularMarketPrice"
         )
