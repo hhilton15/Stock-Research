@@ -249,15 +249,18 @@ if ticker_input:
                         q_fin, ["basic average shares", "diluted average shares"]
                     )
 
+                    # Ensure columns are sorted chronologically oldest -> newest
+                    q_fin_sorted = q_fin.reindex(sorted(q_fin.columns), axis=1)
+
                     # 1. Revenue YoY Calculation (periods=4)
                     if rev_row:
-                        rev_series = q_fin.loc[rev_row].dropna().sort_index()
+                        rev_series = q_fin_sorted.loc[rev_row].dropna()
                         rev_yoy_pct = rev_series.pct_change(periods=4)
 
                         for date in rev_series.index[-4:]:
                             q_date_str = pd.to_datetime(date).strftime("%b %Y")
                             val = rev_series[date]
-                            pct = rev_yoy_pct[date]
+                            pct = rev_yoy_pct.get(date, None)
 
                             rev_table_rows.append({
                                 "Quarter Ending": q_date_str,
@@ -273,26 +276,21 @@ if ticker_input:
                     # 2. EPS YoY Calculation (periods=4)
                     eps_series = pd.Series(dtype=float)
                     if eps_row:
-                        eps_series = q_fin.loc[eps_row].dropna().sort_index()
+                        eps_series = q_fin_sorted.loc[eps_row].dropna()
                     elif ni_row and shares_row:
-                        ni_s = q_fin.loc[ni_row].dropna()
-                        sh_s = q_fin.loc[shares_row].dropna()
+                        ni_s = q_fin_sorted.loc[ni_row].dropna()
+                        sh_s = q_fin_sorted.loc[shares_row].dropna()
                         common_idx = ni_s.index.intersection(sh_s.index)
                         if not common_idx.empty:
-                            calculated_eps = []
-                            valid_dates = []
-                            for d in common_idx:
-                                if sh_s[d] > 0:
-                                    calculated_eps.append(ni_s[d] / sh_s[d])
-                                    valid_dates.append(d)
-                            eps_series = pd.Series(calculated_eps, index=valid_dates).sort_index()
+                            calc_eps = {d: (ni_s[d] / sh_s[d]) for d in common_idx if sh_s[d] > 0}
+                            eps_series = pd.Series(calc_eps).sort_index()
 
                     if not eps_series.empty:
                         eps_yoy_pct = eps_series.pct_change(periods=4)
                         for date in eps_series.index[-4:]:
                             q_date_str = pd.to_datetime(date).strftime("%b %Y")
                             val = eps_series[date]
-                            pct = eps_yoy_pct[date]
+                            pct = eps_yoy_pct.get(date, None)
 
                             eps_table_rows.append({
                                 "Quarter Ending": q_date_str,
