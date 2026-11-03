@@ -54,14 +54,6 @@ def smart_format(val):
         return f"${val:,.0f}"
 
 
-def find_row_flexible(df, keywords):
-    for row in df.index:
-        r_low = str(row).lower()
-        if any(kw in r_low for kw in keywords):
-            return row
-    return None
-
-
 def find_revenue_row(df):
     """Specifically targets Total Revenue while ignoring Cost of Revenue, Tax, etc."""
     for row in df.index:
@@ -70,10 +62,17 @@ def find_revenue_row(df):
             continue
         if "total revenue" in r_low or r_low == "revenue" or "operating revenue" in r_low:
             return row
-    # Fallback
     for row in df.index:
         r_low = str(row).lower()
         if "revenue" in r_low and "cost" not in r_low:
+            return row
+    return None
+
+
+def find_row_flexible(df, keywords):
+    for row in df.index:
+        r_low = str(row).lower()
+        if any(kw in r_low for kw in keywords):
             return row
     return None
 
@@ -266,55 +265,73 @@ if ticker_input:
                     )
 
                     q_fin_sorted = q_fin.reindex(sorted(q_fin.columns), axis=1)
-                    cols = list(q_fin_sorted.columns)
-                    recent_cols = cols[-4:] if len(cols) >= 4 else cols
 
-                    for col in recent_cols:
-                        date_dt = pd.to_datetime(col)
-                        q_date_str = date_dt.strftime("%b %Y")
+                    # 1. Revenue Calculation with QoQ Growth
+                    if rev_row:
+                        rev_series = q_fin_sorted.loc[rev_row].dropna()
+                        rev_pct = rev_series.pct_change()  # Sequential QoQ growth
 
-                        # --- Revenue Extraction ---
-                        rev_val = None
-                        if rev_row and pd.notna(q_fin_sorted.loc[rev_row, col]):
-                            rev_val = q_fin_sorted.loc[rev_row, col]
+                        for date in rev_series.index[-4:]:
+                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
+                            val = rev_series[date]
+                            pct = rev_pct.get(date, None)
 
-                        rev_table_rows.append({
-                            "Quarter Ending": q_date_str,
-                            "Revenue": smart_format(rev_val),
-                        })
+                            rev_table_rows.append({
+                                "Quarter Ending": q_date_str,
+                                "Revenue": smart_format(val),
+                                "QoQ Growth": (
+                                    f"{pct * 100:.2f}%"
+                                    if pd.notna(pct)
+                                    else "N/A"
+                                ),
+                            })
+                        rev_table_rows.reverse()
 
-                        # --- EPS Extraction ---
-                        eps_val = None
-                        if eps_row and pd.notna(q_fin_sorted.loc[eps_row, col]):
-                            eps_val = q_fin_sorted.loc[eps_row, col]
-                        elif ni_row and shares_row:
-                            ni = q_fin_sorted.loc[ni_row, col]
-                            sh = q_fin_sorted.loc[shares_row, col]
-                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
-                                eps_val = ni / sh
+                    # 2. EPS Calculation with QoQ Growth
+                    eps_series = pd.Series(dtype=float)
+                    if eps_row:
+                        eps_series = q_fin_sorted.loc[eps_row].dropna()
+                    elif ni_row and shares_row:
+                        ni_s = q_fin_sorted.loc[ni_row].dropna()
+                        sh_s = q_fin_sorted.loc[shares_row].dropna()
+                        common_idx = ni_s.index.intersection(sh_s.index)
+                        if not common_idx.empty:
+                            calc_eps = {d: (ni_s[d] / sh_s[d]) for d in common_idx if sh_s[d] > 0}
+                            eps_series = pd.Series(calc_eps).sort_index()
 
-                        eps_table_rows.append({
-                            "Quarter Ending": q_date_str,
-                            "EPS": f"${eps_val:,.2f}" if eps_val is not None else "N/A",
-                        })
+                    if not eps_series.empty:
+                        eps_pct = eps_series.pct_change()  # Sequential QoQ growth
 
-                    rev_table_rows.reverse()
-                    eps_table_rows.reverse()
+                        for date in eps_series.index[-4:]:
+                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
+                            val = eps_series[date]
+                            pct = eps_pct.get(date, None)
+
+                            eps_table_rows.append({
+                                "Quarter Ending": q_date_str,
+                                "EPS": f"${val:,.2f}" if val is not None else "N/A",
+                                "QoQ Growth": (
+                                    f"{pct * 100:.2f}%"
+                                    if pd.notna(pct)
+                                    else "N/A"
+                                ),
+                            })
+                        eps_table_rows.reverse()
 
             except Exception:
                 pass
 
-            st.markdown("##### Recent Quarterly Revenue Performance (Last 4 Quarters)")
+            st.markdown("##### Recent Quarterly Revenue Performance")
             if rev_table_rows:
-                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue"]]
+                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue", "QoQ Growth"]]
                 st.dataframe(df_rev, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly revenue data unavailable.")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("##### Recent Quarterly EPS Performance (Last 4 Quarters)")
+            st.markdown("##### Recent Quarterly EPS Performance")
             if eps_table_rows:
-                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS"]]
+                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS", "QoQ Growth"]]
                 st.dataframe(df_eps, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly EPS data unavailable.")
