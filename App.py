@@ -249,7 +249,7 @@ if ticker_input:
                         q_fin, ["basic average shares", "diluted average shares"]
                     )
 
-                    cols = q_fin.columns
+                    cols = list(q_fin.columns)
                     for i in range(min(4, len(cols))):
                         curr_col = cols[i]
                         date_dt = pd.to_datetime(curr_col)
@@ -261,9 +261,9 @@ if ticker_input:
                             rev_val = q_fin.loc[rev_row, curr_col]
 
                         qoq_rev = None
-                        next_col_idx = i + 1
-                        if next_col_idx < len(cols) and rev_row:
-                            prev_rev = q_fin.loc[rev_row, cols[next_col_idx]]
+                        if (i + 1) < len(cols) and rev_row:
+                            prev_col = cols[i + 1]
+                            prev_rev = q_fin.loc[rev_row, prev_col]
                             if (
                                 pd.notna(prev_rev)
                                 and prev_rev != 0
@@ -292,15 +292,14 @@ if ticker_input:
                                 eps_val = ni / sh
 
                         qoq_eps = None
-                        if next_col_idx < len(cols):
+                        if (i + 1) < len(cols):
+                            prev_col = cols[i + 1]
                             prev_eps = None
-                            if eps_row and pd.notna(
-                                q_fin.loc[eps_row, cols[next_col_idx]]
-                            ):
-                                prev_eps = q_fin.loc[eps_row, cols[next_col_idx]]
+                            if eps_row and pd.notna(q_fin.loc[eps_row, prev_col]):
+                                prev_eps = q_fin.loc[eps_row, prev_col]
                             elif ni_row and shares_row:
-                                ni_p = q_fin.loc[ni_row, cols[next_col_idx]]
-                                sh_p = q_fin.loc[shares_row, cols[next_col_idx]]
+                                ni_p = q_fin.loc[ni_row, prev_col]
+                                sh_p = q_fin.loc[shares_row, prev_col]
                                 if pd.notna(ni_p) and pd.notna(sh_p) and sh_p > 0:
                                     prev_eps = ni_p / sh_p
 
@@ -329,10 +328,9 @@ if ticker_input:
 
             st.markdown("##### Recent Quarterly Revenue Performance")
             if rev_table_data:
-                df_rev = pd.DataFrame(
-                    rev_table_data,
-                    columns=["Quarter Ending", "Revenue", "Revenue QoQ Growth"],
-                )
+                df_rev = pd.DataFrame(rev_table_data)[
+                    ["Quarter Ending", "Revenue", "Revenue QoQ Growth"]
+                ]
                 st.dataframe(df_rev, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly revenue data unavailable.")
@@ -340,10 +338,9 @@ if ticker_input:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("##### Recent Quarterly EPS Performance")
             if eps_table_data:
-                df_eps = pd.DataFrame(
-                    eps_table_data,
-                    columns=["Quarter Ending", "EPS", "EPS QoQ Growth"],
-                )
+                df_eps = pd.DataFrame(eps_table_data)[
+                    ["Quarter Ending", "EPS", "EPS QoQ Growth"]
+                ]
                 st.dataframe(df_eps, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly EPS data unavailable.")
