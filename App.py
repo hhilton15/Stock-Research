@@ -154,7 +154,7 @@ if ticker_input:
 
         profit_margins = info.get("profitMargins")
         gross_margins = info.get("grossMargins")
-        operating_margins = info.get("operatingMargins")
+        operating_margins = info.get("operatingmargins") if "operatingmargins" in info else info.get("operatingMargins")
         free_cashflow = info.get("freeCashflow")
 
         # Forward Estimates extraction
@@ -249,70 +249,61 @@ if ticker_input:
                         q_fin, ["basic average shares", "diluted average shares"]
                     )
 
-                    # Sort columns chronologically (oldest to newest) so growth math flows left-to-right correctly
-                    sorted_cols = sorted(list(q_fin.columns))
-                    # Keep only the last 4 quarters available
-                    recent_cols = sorted_cols[-4:]
+                    # 1. Revenue Vectorized Series Calculation
+                    if rev_row:
+                        rev_series = q_fin.loc[rev_row].dropna().sort_index()
+                        rev_pct = rev_series.pct_change()
 
-                    prev_rev = None
-                    prev_eps = None
+                        for date in rev_series.index[-4:]:
+                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
+                            val = rev_series[date]
+                            pct = rev_pct[date]
 
-                    for col in recent_cols:
-                        date_dt = pd.to_datetime(col)
-                        q_date_str = date_dt.strftime("%b %Y")
+                            rev_table_rows.append({
+                                "Quarter Ending": q_date_str,
+                                "Revenue": smart_format(val),
+                                "Revenue QoQ Growth": (
+                                    f"{pct * 100:.2f}%"
+                                    if pd.notna(pct)
+                                    else "N/A"
+                                ),
+                            })
+                        rev_table_rows.reverse()
 
-                        # --- Revenue Extraction ---
-                        rev_val = None
-                        if rev_row and pd.notna(q_fin.loc[rev_row, col]):
-                            rev_val = q_fin.loc[rev_row, col]
+                    # 2. EPS Vectorized Series Calculation
+                    eps_series = pd.Series(dtype=float)
+                    if eps_row:
+                        eps_series = q_fin.loc[eps_row].dropna().sort_index()
+                    elif ni_row and shares_row:
+                        ni_s = q_fin.loc[ni_row].dropna()
+                        sh_s = q_fin.loc[shares_row].dropna()
+                        common_idx = ni_s.index.intersection(sh_s.index)
+                        if not common_idx.empty:
+                            calculated_eps = []
+                            valid_dates = []
+                            for d in common_idx:
+                                if sh_s[d] > 0:
+                                    calculated_eps.append(ni_s[d] / sh_s[d])
+                                    valid_dates.append(d)
+                            eps_series = pd.Series(calculated_eps, index=valid_dates).sort_index()
 
-                        qoq_rev = None
-                        if prev_rev is not None and prev_rev != 0 and rev_val is not None:
-                            qoq_rev = (rev_val - prev_rev) / abs(prev_rev)
+                    if not eps_series.empty:
+                        eps_pct = eps_series.pct_change()
+                        for date in eps_series.index[-4:]:
+                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
+                            val = eps_series[date]
+                            pct = eps_pct[date]
 
-                        rev_table_rows.append({
-                            "Quarter Ending": q_date_str,
-                            "Revenue": smart_format(rev_val),
-                            "Revenue QoQ Growth": (
-                                f"{qoq_rev * 100:.2f}%"
-                                if qoq_rev is not None
-                                else "N/A"
-                            ),
-                        })
-                        prev_rev = rev_val
-
-                        # --- EPS Extraction ---
-                        eps_val = None
-                        if eps_row and pd.notna(q_fin.loc[eps_row, col]):
-                            eps_val = q_fin.loc[eps_row, col]
-                        elif ni_row and shares_row:
-                            ni = q_fin.loc[ni_row, col]
-                            sh = q_fin.loc[shares_row, col]
-                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
-                                eps_val = ni / sh
-
-                        qoq_eps = None
-                        if prev_eps is not None and prev_eps != 0 and eps_val is not None:
-                            qoq_eps = (eps_val - prev_eps) / abs(prev_eps)
-
-                        eps_table_rows.append({
-                            "Quarter Ending": q_date_str,
-                            "EPS": (
-                                f"${eps_val:,.2f}"
-                                if eps_val is not None
-                                else "N/A"
-                            ),
-                            "EPS QoQ Growth": (
-                                f"{qoq_eps * 100:.2f}%"
-                                if qoq_eps is not None
-                                else "N/A"
-                            ),
-                        })
-                        prev_eps = eps_val
-
-                    # Reverse rows so the newest quarter appears at the top of the table
-                    rev_table_rows.reverse()
-                    eps_table_rows.reverse()
+                            eps_table_rows.append({
+                                "Quarter Ending": q_date_str,
+                                "EPS": f"${val:,.2f}",
+                                "EPS QoQ Growth": (
+                                    f"{pct * 100:.2f}%"
+                                    if pd.notna(pct)
+                                    else "N/A"
+                                ),
+                            })
+                        eps_table_rows.reverse()
 
             except Exception:
                 pass
