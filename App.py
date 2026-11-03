@@ -260,6 +260,7 @@ if ticker_input:
                         if rev_row and pd.notna(q_fin.loc[rev_row, curr_col]):
                             rev_val = q_fin.loc[rev_row, curr_col]
 
+                        # Correct QoQ direction comparing newer index i to older index i+1
                         qoq_rev = None
                         if (i + 1) < len(cols) and rev_row:
                             prev_col = cols[i + 1]
