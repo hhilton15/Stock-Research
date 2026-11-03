@@ -30,16 +30,16 @@ st.markdown(
 
 
 @st.cache_data(ttl=1800)
-def fetch_ticker_info(symbol):
-    """Fetch ticker info dictionary with caching to prevent Yahoo Finance rate limits."""
+def fetch_ticker_data(symbol):
+    """Fetch ticker object and info dictionary with caching to prevent Yahoo Finance rate limits."""
     try:
         t = yf.Ticker(symbol)
         info = t.info
         if not info or info.get("quoteType") is None:
-            return None
-        return info
+            return None, None
+        return t, info
     except Exception:
-        return None
+        return None, None
 
 
 def smart_format(val):
@@ -85,15 +85,13 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Data provided via Yahoo Finance (`yfinance`)")
 
 if ticker_input:
-    info = fetch_ticker_info(ticker_input)
+    ticker, info = fetch_ticker_data(ticker_input)
 
     if not info:
         st.error(
             f"Unable to retrieve data for ticker **'{ticker_input}'**. Please verify the symbol and try again."
         )
     else:
-        ticker = yf.Ticker(ticker_input)
-
         current_price = info.get("currentPrice") or info.get(
             "regularMarketPrice"
         )
@@ -193,7 +191,7 @@ if ticker_input:
             else None
         )
 
-        # Tabbed Layout (6 Tabs total now)
+        # Tabbed Layout
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "📊 Valuation & Income",
             "📈 Growth Metrics",
@@ -383,7 +381,6 @@ if ticker_input:
             pe_history_data = []
             try:
                 income_stmt = ticker.financials
-                # Download max available history to ensure coverage for past fiscal years
                 history_prices = ticker.history(period="max")
 
                 if (
@@ -403,11 +400,9 @@ if ticker_input:
                         date_dt = pd.to_datetime(col_date)
                         year_str = date_dt.strftime("%Y")
 
-                        # Calculate EPS
                         eps_val = None
                         if eps_row and pd.notna(income_stmt.loc[eps_row, col_date]):
                             val = income_stmt.loc[eps_row, col_date]
-                            # If row is net income instead of EPS, calculate per share if shares available
                             if eps_row == ni_row and shares_row:
                                 sh = income_stmt.loc[shares_row, col_date]
                                 if pd.notna(sh) and sh > 0:
@@ -420,8 +415,7 @@ if ticker_input:
                             if pd.notna(ni) and pd.notna(sh) and sh > 0:
                                 eps_val = ni / sh
 
-                        # Fallback: if EPS is still missing or total net income was used incorrectly as per-share, check info or estimate
-                        if eps_val and eps_val > 50:  # Likely absolute net income rather than per share
+                        if eps_val and eps_val > 50:
                             sh = (
                                 income_stmt.loc[shares_row, col_date]
                                 if shares_row
@@ -430,10 +424,9 @@ if ticker_input:
                             if sh and sh > 0:
                                 eps_val = eps_val / sh
 
-                        # Find historical closing price on or closest to fiscal year-end date
                         hist_sub = history_prices.loc[:date_dt]
                         if hist_sub.empty:
-                            hist_sub = history_prices  # Fallback to earliest available if date is out of range
+                            hist_sub = history_prices
 
                         if not hist_sub.empty and eps_val and eps_val > 0:
                             close_p = hist_sub["Close"].iloc[-1]
@@ -445,7 +438,7 @@ if ticker_input:
                                 "EPS": f"${eps_val:,.2f}",
                                 "Historical P/E": f"{hist_pe:.2f}x",
                             })
-            except Exception as e:
+            except Exception:
                 pass
 
             if pe_history_data:
@@ -459,7 +452,6 @@ if ticker_input:
         with tab6:
             bulls, bears = [], []
 
-            # Profit Margin Rules
             if profit_margins:
                 if profit_margins > 0.15:
                     bulls.append(
@@ -470,7 +462,6 @@ if ticker_input:
                         f"Compressed profitability with a low net profit margin of {profit_margins * 100:.1f}%."
                     )
 
-            # Revenue Growth Rules
             if rev_growth_current:
                 if rev_growth_current > 0.05:
                     bulls.append(
@@ -481,7 +472,6 @@ if ticker_input:
                         f"Recent YoY revenue contraction of {rev_growth_current * 100:.1f}%."
                     )
 
-            # Valuation & Multiples Rules
             if peg_ratio:
                 if peg_ratio > 2.5:
                     bears.append(
@@ -497,7 +487,6 @@ if ticker_input:
                     f"Trading at a premium multiple with a trailing P/E of {trailing_pe:.1f}x."
                 )
 
-            # Debt & Balance Sheet Rules
             if debt_to_equity:
                 if debt_to_equity > 150:
                     bears.append(
@@ -508,7 +497,6 @@ if ticker_input:
                         f"Conservative balance sheet with low leverage (Debt/Equity: {debt_to_equity:.1f}%)."
                     )
 
-            # Free Cash Flow Rules
             if free_cashflow:
                 if free_cashflow > 0:
                     bulls.append(
