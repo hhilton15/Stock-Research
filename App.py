@@ -31,7 +31,7 @@ st.markdown(
 
 @st.cache_data(ttl=1800)
 def fetch_ticker_info(symbol):
-    """Fetch ticker info dictionary with caching to prevent rate limits."""
+    """Fetch ticker info dictionary with caching to prevent Yahoo Finance rate limits."""
     try:
         t = yf.Ticker(symbol)
         info = t.info
@@ -62,13 +62,18 @@ def find_row_flexible(df, keywords):
     return None
 
 
-def extract_growth(df, period_key):
-    """Safely extracts growth percentage from DataFrame or dictionary."""
+def extract_estimate_growth(df, period_key):
+    """Safely extracts forward growth decimal from yfinance estimate DataFrames."""
     if df is not None and not df.empty:
+        # Check if period exists in index or columns depending on data structure
         if period_key in df.columns and "growth" in df.index:
             val = df.loc["growth", period_key]
             if pd.notna(val):
-                return val
+                return float(val)
+        elif period_key in df.index and "growth" in df.columns:
+            val = df.loc[period_key, "growth"]
+            if pd.notna(val):
+                return float(val)
     return None
 
 
@@ -88,7 +93,7 @@ if ticker_input:
             f"Unable to retrieve data for ticker **'{ticker_input}'**. Please verify the symbol and try again."
         )
     else:
-        # Instantiate yf.Ticker here for statements/estimates calls
+        # Instantiate yf.Ticker for statements/estimates calls
         ticker = yf.Ticker(ticker_input)
 
         current_price = info.get("currentPrice") or info.get(
@@ -139,6 +144,7 @@ if ticker_input:
         fifty_two_high = info.get("fiftyTwoWeekHigh")
         analyst_target = info.get("targetMeanPrice")
 
+        # Current/Past Reported Quarterly Growth
         rev_growth_current = info.get("revenueGrowth")
         eps_growth_current = info.get("earningsGrowth")
 
@@ -147,22 +153,22 @@ if ticker_input:
         operating_margins = info.get("operatingMargins")
         free_cashflow = info.get("freeCashflow")
 
-        # Estimates extraction
+        # Forward Estimates extraction (Strict, without falling back to past actuals)
         rev_growth_1y, rev_growth_2y = None, None
         eps_growth_1y, eps_growth_2y = None, None
         eps_2y_avg = None
 
         try:
             rev_est = ticker.revenue_estimate
-            rev_growth_1y = extract_growth(rev_est, "+1y")
-            rev_growth_2y = extract_growth(rev_est, "+2y")
+            rev_growth_1y = extract_estimate_growth(rev_est, "+1y")
+            rev_growth_2y = extract_estimate_growth(rev_est, "+2y")
         except Exception:
             pass
 
         try:
             earn_est = ticker.earnings_estimate
-            eps_growth_1y = extract_growth(earn_est, "+1y")
-            eps_growth_2y = extract_growth(earn_est, "+2y")
+            eps_growth_1y = extract_estimate_growth(earn_est, "+1y")
+            eps_growth_2y = extract_estimate_growth(earn_est, "+2y")
             if (
                 earn_est is not None
                 and not earn_est.empty
@@ -172,11 +178,6 @@ if ticker_input:
                 eps_2y_avg = earn_est.loc["avg", "+2y"]
         except Exception:
             pass
-
-        if eps_growth_1y is None and info.get("earningsQuarterlyGrowth"):
-            eps_growth_1y = info.get("earningsQuarterlyGrowth")
-        if rev_growth_1y is None and rev_growth_current:
-            rev_growth_1y = rev_growth_current
 
         forward_pe_2y = (
             (current_price / eps_2y_avg)
@@ -239,7 +240,7 @@ if ticker_input:
             st.markdown("##### Revenue Growth")
             g1, g2, g3 = st.columns(3)
             g1.metric(
-                "Current Rev Growth (YoY)",
+                "Most Recent Quarter Growth (YoY)",
                 f"{rev_growth_current * 100:.2f}%"
                 if rev_growth_current is not None
                 else "N/A",
@@ -261,7 +262,7 @@ if ticker_input:
             st.markdown("##### Earnings Per Share (EPS) Growth")
             g4, g5, g6 = st.columns(3)
             g4.metric(
-                "Current EPS Growth (YoY)",
+                "Most Recent Quarter EPS Growth (YoY)",
                 f"{eps_growth_current * 100:.2f}%"
                 if eps_growth_current is not None
                 else "N/A",
