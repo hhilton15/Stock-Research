@@ -94,25 +94,50 @@ if ticker_input:
     fifty_two_low = info.get('fiftyTwoWeekLow')
     fifty_two_high = info.get('fiftyTwoWeekHigh')
     analyst_target = info.get('targetMeanPrice')
+    
+    # Growth metrics extraction
     rev_growth_current = info.get('revenueGrowth')
+    eps_growth_current = info.get('earningsGrowth')
+    
     profit_margins = info.get('profitMargins')
     gross_margins = info.get('grossMargins')
     operating_margins = info.get('operatingMargins')
 
-    # Estimations
+    # Estimations (Revenue & EPS 1Y / 2Y)
+    rev_growth_1y = None
+    rev_growth_2y = None
+    eps_growth_1y = None
+    eps_growth_2y = None
     eps_2y_avg = None
+
+    try:
+        rev_est = ticker.revenue_estimate
+        if rev_est is not None and not rev_est.empty:
+            if '+1y' in rev_est.columns and 'growth' in rev_est.index:
+                rev_growth_1y = rev_est.loc['growth', '+1y']
+            if '+2y' in rev_est.columns and 'growth' in rev_est.index:
+                rev_growth_2y = rev_est.loc['growth', '+2y']
+    except Exception:
+        pass
+
     try:
         earn_est = ticker.earnings_estimate
-        if earn_est is not None and not earn_est.empty and '+2y' in earn_est.index:
-            eps_2y_avg = earn_est.loc['+2y', 'avg']
+        if earn_est is not None and not earn_est.empty:
+            if '+1y' in earn_est.columns and 'growth' in earn_est.index:
+                eps_growth_1y = earn_est.loc['growth', '+1y']
+            if '+2y' in earn_est.columns and 'growth' in earn_est.index:
+                eps_growth_2y = earn_est.loc['growth', '+2y']
+            if '+2y' in earn_est.index and 'avg' in earn_est.columns:
+                eps_2y_avg = earn_est.loc['+2y', 'avg']
     except Exception:
         pass
 
     forward_pe_2y = (current_price / eps_2y_avg) if (current_price and eps_2y_avg and eps_2y_avg > 0) else None
 
     # Streamlined Tabbed Layout
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Valuation & Income", 
+        "📈 Growth Metrics",
         "💰 Profitability & Cash Flow", 
         "📉 Quarterly Trends (4Q)",
         "🎯 Bull & Bear Insights"
@@ -134,6 +159,22 @@ if ticker_input:
         c4.metric("Payout Ratio", f"{payout_ratio:.2f}%" if payout_ratio is not None else "N/A")
 
     with tab2:
+        st.subheader("Revenue & EPS Growth Projections")
+        
+        st.markdown("##### Revenue Growth")
+        g1, g2, g3 = st.columns(3)
+        g1.metric("Current Rev Growth (YoY)", f"{rev_growth_current * 100:.2f}%" if rev_growth_current else "N/A")
+        g2.metric("1-Yr Expected Rev Growth", f"{rev_growth_1y * 100:.2f}%" if rev_growth_1y else "N/A")
+        g3.metric("2-Yr Expected Rev Growth", f"{rev_growth_2y * 100:.2f}%" if rev_growth_2y else "N/A")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("##### Earnings Per Share (EPS) Growth")
+        g4, g5, g6 = st.columns(3)
+        g4.metric("Current EPS Growth (YoY)", f"{eps_growth_current * 100:.2f}%" if eps_growth_current else "N/A")
+        g5.metric("1-Yr Expected EPS Growth", f"{eps_growth_1y * 100:.2f}%" if eps_growth_1y else "N/A")
+        g6.metric("2-Yr Expected EPS Growth", f"{eps_growth_2y * 100:.2f}%" if eps_growth_2y else "N/A")
+
+    with tab3:
         st.subheader("Profitability & Leverage")
         m5, m6, m7, m8 = st.columns(4)
         m5.metric("Gross Margin", f"{gross_margins * 100:.2f}%" if gross_margins else "N/A")
@@ -141,39 +182,10 @@ if ticker_input:
         m7.metric("Net Profit Margin", f"{profit_margins * 100:.2f}%" if profit_margins else "N/A")
         m8.metric("Debt-to-Equity", f"{debt_to_equity:.2f}%" if debt_to_equity else "N/A")
 
-    with tab3:
-        st.subheader("Recent Quarterly Trends (Last 4 Quarters)")
-        
-        # 1. Net Margin Table (Last 4 Quarters)
-        st.markdown("##### Net Margin % Trend")
-        q_margins_data = []
-        try:
-            q_fin = ticker.quarterly_financials
-            if q_fin is not None and not q_fin.empty:
-                ni_row = find_row_flexible(q_fin, ['net income'])
-                rev_row = find_row_flexible(q_fin, ['total revenue', 'revenue'])
-                if ni_row and rev_row:
-                    for date in q_fin.columns[:4]:
-                        ni = q_fin.loc[ni_row, date]
-                        rev = q_fin.loc[rev_row, date]
-                        if pd.notna(ni) and pd.notna(rev) and rev != 0:
-                            q_margins_data.append({
-                                'Quarter Ending': pd.to_datetime(date).strftime('%b %Y'),
-                                'Net Margin (%)': round((ni / rev) * 100, 2)
-                            })
-        except Exception:
-            pass
-
-        if q_margins_data:
-            df_m = pd.DataFrame(q_margins_data)
-            st.dataframe(df_m, width='stretch', hide_index=True)
-        else:
-            st.info("Quarterly net margin data unavailable.")
-
         st.markdown("<br>", unsafe_allow_html=True)
-
-        # 2. Free Cash Flow Table (Last 4 Quarters)
-        st.markdown("##### Free Cash Flow (FCF) Trend")
+        
+        # Free Cash Flow Table (Last 4 Quarters)
+        st.markdown("##### Free Cash Flow (FCF) Trend (Last 4 Quarters)")
         q_fcf_data = []
         try:
             q_cf = ticker.quarterly_cashflow
@@ -208,7 +220,33 @@ if ticker_input:
             st.info("Quarterly Free Cash Flow data unavailable.")
 
     with tab4:
-        # Automated Bull & Bear Insights (Cleaned up, no repetition)
+        st.subheader("Net Margin % Trend (Last 4 Quarters)")
+        q_margins_data = []
+        try:
+            q_fin = ticker.quarterly_financials
+            if q_fin is not None and not q_fin.empty:
+                ni_row = find_row_flexible(q_fin, ['net income'])
+                rev_row = find_row_flexible(q_fin, ['total revenue', 'revenue'])
+                if ni_row and rev_row:
+                    for date in q_fin.columns[:4]:
+                        ni = q_fin.loc[ni_row, date]
+                        rev = q_fin.loc[rev_row, date]
+                        if pd.notna(ni) and pd.notna(rev) and rev != 0:
+                            q_margins_data.append({
+                                'Quarter Ending': pd.to_datetime(date).strftime('%b %Y'),
+                                'Net Margin (%)': round((ni / rev) * 100, 2)
+                            })
+        except Exception:
+            pass
+
+        if q_margins_data:
+            df_m = pd.DataFrame(q_margins_data)
+            st.dataframe(df_m, width='stretch', hide_index=True)
+        else:
+            st.info("Quarterly net margin data unavailable.")
+
+    with tab5:
+        # Automated Bull & Bear Insights
         bulls, bears = [], []
         if profit_margins and profit_margins > 0.15:
             bulls.append(f"Strong profitability with a net profit margin of {profit_margins*100:.1f}%.")
