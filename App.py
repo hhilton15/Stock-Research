@@ -35,7 +35,7 @@ def fetch_ticker_info(symbol):
     try:
         t = yf.Ticker(symbol)
         info = t.info
-        if not info or info.get("quoteType") is None:
+        if not info or not isinstance(info, dict) or info.get("quoteType") is None:
             return None
         return info
     except Exception:
@@ -152,10 +152,6 @@ if ticker_input:
 
         analyst_target = info.get("targetMeanPrice")
 
-        # Current/Past Reported Quarterly Growth
-        rev_growth_current = info.get("revenueGrowth")
-        eps_growth_current = info.get("earningsGrowth")
-
         profit_margins = info.get("profitMargins")
         gross_margins = info.get("grossMargins")
         operating_margins = info.get("operatingMargins")
@@ -240,43 +236,109 @@ if ticker_input:
         with tab2:
             st.subheader("Revenue & EPS Growth Projections")
 
-            st.markdown("##### Revenue Growth")
-            g1, g2, g3 = st.columns(3)
+            st.markdown("##### Historical Quarterly YoY Growth (Last 4 Quarters)")
+            q_growth_data = []
+            try:
+                q_fin = ticker.quarterly_financials
+                if q_fin is not None and not q_fin.empty:
+                    rev_row = find_row_flexible(q_fin, ["total revenue", "revenue"])
+                    eps_row = find_row_flexible(q_fin, ["basic eps", "diluted eps"])
+                    ni_row = find_row_flexible(q_fin, ["net income"])
+                    shares_row = find_row_flexible(
+                        q_fin, ["basic average shares", "diluted average shares"]
+                    )
+
+                    cols = q_fin.columns
+                    for i in range(min(4, len(cols))):
+                        curr_col = cols[i]
+                        date_dt = pd.to_datetime(curr_col)
+                        q_date_str = date_dt.strftime("%b %Y")
+
+                        prev_col_idx = i + 4
+                        rev_yoy = None
+                        if rev_row and pd.notna(q_fin.loc[rev_row, curr_col]):
+                            curr_rev = q_fin.loc[rev_row, curr_col]
+                            if prev_col_idx < len(cols) and pd.notna(
+                                q_fin.loc[rev_row, cols[prev_col_idx]]
+                            ):
+                                prev_rev = q_fin.loc[rev_row, cols[prev_col_idx]]
+                                if prev_rev != 0:
+                                    rev_yoy = (curr_rev - prev_rev) / abs(
+                                        prev_rev
+                                    )
+
+                        curr_eps = None
+                        if eps_row and pd.notna(q_fin.loc[eps_row, curr_col]):
+                            curr_eps = q_fin.loc[eps_row, curr_col]
+                        elif ni_row and shares_row:
+                            ni = q_fin.loc[ni_row, curr_col]
+                            sh = q_fin.loc[shares_row, curr_col]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                curr_eps = ni / sh
+
+                        prev_eps = None
+                        if prev_col_idx < len(cols):
+                            p_col = cols[prev_col_idx]
+                            if eps_row and pd.notna(q_fin.loc[eps_row, p_col]):
+                                prev_eps = q_fin.loc[eps_row, p_col]
+                            elif ni_row and shares_row:
+                                ni_p = q_fin.loc[ni_row, p_col]
+                                sh_p = q_fin.loc[shares_row, p_col]
+                                if pd.notna(ni_p) and pd.notna(sh_p) and sh_p > 0:
+                                    prev_eps = ni_p / sh_p
+
+                        eps_yoy = None
+                        if (
+                            curr_eps is not None
+                            and prev_eps is not None
+                            and prev_eps != 0
+                        ):
+                            eps_yoy = (curr_eps - prev_eps) / abs(prev_eps)
+
+                        q_growth_data.append({
+                            "Quarter Ending": q_date_str,
+                            "Revenue Growth (YoY)": (
+                                f"{rev_yoy * 100:.2f}%"
+                                if rev_yoy is not None
+                                else "N/A"
+                            ),
+                            "EPS Growth (YoY)": (
+                                f"{eps_yoy * 100:.2f}%"
+                                if eps_yoy is not None
+                                else "N/A"
+                            ),
+                        })
+            except Exception:
+                pass
+
+            if q_growth_data:
+                df_qg = pd.DataFrame(q_growth_data)
+                st.dataframe(df_qg, use_container_width=True, hide_index=True)
+            else:
+                st.info("Historical quarterly growth data unavailable.")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("##### Forward Analyst Expectations")
+            g1, g2, g3, g4 = st.columns(4)
             g1.metric(
-                "Most Recent Quarter Growth (YoY)",
-                f"{rev_growth_current * 100:.2f}%"
-                if rev_growth_current is not None
-                else "N/A",
-            )
-            g2.metric(
                 "1-Yr Expected Rev Growth",
                 f"{rev_growth_1y * 100:.2f}%"
                 if rev_growth_1y is not None
                 else "N/A",
             )
-            g3.metric(
+            g2.metric(
                 "2-Yr Expected Rev Growth",
                 f"{rev_growth_2y * 100:.2f}%"
                 if rev_growth_2y is not None
                 else "N/A",
             )
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("##### Earnings Per Share (EPS) Growth")
-            g4, g5, g6 = st.columns(3)
-            g4.metric(
-                "Most Recent Quarter EPS Growth (YoY)",
-                f"{eps_growth_current * 100:.2f}%"
-                if eps_growth_current is not None
-                else "N/A",
-            )
-            g5.metric(
+            g3.metric(
                 "1-Yr Expected EPS Growth",
                 f"{eps_growth_1y * 100:.2f}%"
                 if eps_growth_1y is not None
                 else "N/A",
             )
-            g6.metric(
+            g4.metric(
                 "2-Yr Expected EPS Growth",
                 f"{eps_growth_2y * 100:.2f}%"
                 if eps_growth_2y is not None
@@ -464,14 +526,14 @@ if ticker_input:
                         f"Compressed profitability with a low net profit margin of {profit_margins * 100:.1f}%."
                     )
 
-            if rev_growth_current:
-                if rev_growth_current > 0.05:
+            if rev_growth_1y:
+                if rev_growth_1y > 0.05:
                     bulls.append(
-                        f"Solid YoY revenue growth momentum of {rev_growth_current * 100:.1f}%."
+                        f"Solid 1-Yr expected revenue growth of {rev_growth_1y * 100:.1f}%."
                     )
-                elif rev_growth_current < 0:
+                elif rev_growth_1y < 0:
                     bears.append(
-                        f"Recent YoY revenue contraction of {rev_growth_current * 100:.1f}%."
+                        f"Projected 1-Yr revenue contraction of {rev_growth_1y * 100:.1f}%."
                     )
 
             if peg_ratio:
