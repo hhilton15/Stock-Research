@@ -236,7 +236,7 @@ if ticker_input:
         with tab2:
             st.subheader("Revenue & EPS Growth Projections")
 
-            st.markdown("##### Historical Quarterly YoY Growth (Last 4 Quarters)")
+            st.markdown("##### Recent Quarterly Performance (Last 4 Quarters)")
             q_growth_data = []
             try:
                 q_fin = ticker.quarterly_financials
@@ -254,57 +254,41 @@ if ticker_input:
                         date_dt = pd.to_datetime(curr_col)
                         q_date_str = date_dt.strftime("%b %Y")
 
-                        prev_col_idx = i + 4
-                        rev_yoy = None
+                        rev_val = None
                         if rev_row and pd.notna(q_fin.loc[rev_row, curr_col]):
-                            curr_rev = q_fin.loc[rev_row, curr_col]
-                            if prev_col_idx < len(cols) and pd.notna(
-                                q_fin.loc[rev_row, cols[prev_col_idx]]
-                            ):
-                                prev_rev = q_fin.loc[rev_row, cols[prev_col_idx]]
-                                if prev_rev != 0:
-                                    rev_yoy = (curr_rev - prev_rev) / abs(
-                                        prev_rev
-                                    )
+                            rev_val = q_fin.loc[rev_row, curr_col]
 
-                        curr_eps = None
+                        eps_val = None
                         if eps_row and pd.notna(q_fin.loc[eps_row, curr_col]):
-                            curr_eps = q_fin.loc[eps_row, curr_col]
+                            eps_val = q_fin.loc[eps_row, curr_col]
                         elif ni_row and shares_row:
                             ni = q_fin.loc[ni_row, curr_col]
                             sh = q_fin.loc[shares_row, curr_col]
                             if pd.notna(ni) and pd.notna(sh) and sh > 0:
-                                curr_eps = ni / sh
+                                eps_val = ni / sh
 
-                        prev_eps = None
-                        if prev_col_idx < len(cols):
-                            p_col = cols[prev_col_idx]
-                            if eps_row and pd.notna(q_fin.loc[eps_row, p_col]):
-                                prev_eps = q_fin.loc[eps_row, p_col]
-                            elif ni_row and shares_row:
-                                ni_p = q_fin.loc[ni_row, p_col]
-                                sh_p = q_fin.loc[shares_row, p_col]
-                                if pd.notna(ni_p) and pd.notna(sh_p) and sh_p > 0:
-                                    prev_eps = ni_p / sh_p
-
-                        eps_yoy = None
-                        if (
-                            curr_eps is not None
-                            and prev_eps is not None
-                            and prev_eps != 0
-                        ):
-                            eps_yoy = (curr_eps - prev_eps) / abs(prev_eps)
+                        qoq_rev = None
+                        next_col_idx = i + 1
+                        if next_col_idx < len(cols) and rev_row:
+                            prev_rev = q_fin.loc[rev_row, cols[next_col_idx]]
+                            if (
+                                pd.notna(prev_rev)
+                                and prev_rev != 0
+                                and rev_val is not None
+                            ):
+                                qoq_rev = (rev_val - prev_rev) / abs(prev_rev)
 
                         q_growth_data.append({
                             "Quarter Ending": q_date_str,
-                            "Revenue Growth (YoY)": (
-                                f"{rev_yoy * 100:.2f}%"
-                                if rev_yoy is not None
+                            "Revenue": smart_format(rev_val),
+                            "Revenue QoQ": (
+                                f"{qoq_rev * 100:.2f}%"
+                                if qoq_rev is not None
                                 else "N/A"
                             ),
-                            "EPS Growth (YoY)": (
-                                f"{eps_yoy * 100:.2f}%"
-                                if eps_yoy is not None
+                            "EPS": (
+                                f"${eps_val:,.2f}"
+                                if eps_val is not None
                                 else "N/A"
                             ),
                         })
@@ -315,7 +299,7 @@ if ticker_input:
                 df_qg = pd.DataFrame(q_growth_data)
                 st.dataframe(df_qg, use_container_width=True, hide_index=True)
             else:
-                st.info("Historical quarterly growth data unavailable.")
+                st.info("Recent quarterly performance data unavailable.")
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("##### Forward Analyst Expectations")
