@@ -329,7 +329,10 @@ if ticker_input:
 
             st.markdown("##### Recent Quarterly Revenue Performance")
             if rev_table_data:
-                df_rev = pd.DataFrame(rev_table_data)
+                df_rev = pd.DataFrame(
+                    rev_table_data,
+                    columns=["Quarter Ending", "Revenue", "Revenue QoQ Growth"],
+                )
                 st.dataframe(df_rev, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly revenue data unavailable.")
@@ -337,7 +340,10 @@ if ticker_input:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("##### Recent Quarterly EPS Performance")
             if eps_table_data:
-                df_eps = pd.DataFrame(eps_table_data)
+                df_eps = pd.DataFrame(
+                    eps_table_data,
+                    columns=["Quarter Ending", "EPS", "EPS QoQ Growth"],
+                )
                 st.dataframe(df_eps, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly EPS data unavailable.")
@@ -432,7 +438,9 @@ if ticker_input:
                 pass
 
             if q_fcf_data:
-                df_fcf = pd.DataFrame(q_fcf_data)
+                df_fcf = pd.DataFrame(
+                    q_fcf_data, columns=["Quarter Ending", "Free Cash Flow"]
+                )
                 st.dataframe(df_fcf, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly Free Cash Flow data unavailable.")
@@ -460,7 +468,9 @@ if ticker_input:
                 pass
 
             if q_margins_data:
-                df_m = pd.DataFrame(q_margins_data)
+                df_m = pd.DataFrame(
+                    q_margins_data, columns=["Quarter Ending", "Net Margin (%)"]
+                )
                 st.dataframe(df_m, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly net margin data unavailable.")
