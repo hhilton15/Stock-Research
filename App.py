@@ -167,8 +167,8 @@ if ticker_input:
 
         analyst_target = info.get("targetMeanPrice")
 
-        profit_margins = info.get("profitMargins")
-        gross_margins = info.get("grossMargins")
+        profit_margins = info.get("profitmargins") if "profitmargins" in info else info.get("profitMargins")
+        gross_margins = info.get("grossmargins") if "grossmargins" in info else info.get("grossMargins")
         operating_margins = info.get("operatingmargins") if "operatingmargins" in info else info.get("operatingMargins")
         free_cashflow = info.get("freeCashflow")
 
@@ -264,73 +264,90 @@ if ticker_input:
                         q_fin, ["basic average shares", "diluted average shares"]
                     )
 
-                    q_fin_sorted = q_fin.reindex(sorted(q_fin.columns), axis=1)
+                    # Sort columns chronologically (oldest to newest)
+                    sorted_cols = sorted(list(q_fin.columns))
+                    
+                    # Extract raw values in chronological order
+                    rev_vals = []
+                    eps_vals = []
+                    dates_list = []
 
-                    # 1. Revenue Calculation with QoQ & YoY Growth
-                    if rev_row:
-                        rev_series = q_fin_sorted.loc[rev_row].dropna()
-                        rev_qoq = rev_series.pct_change()
-                        rev_yoy = rev_series.pct_change(periods=4)
+                    for col in sorted_cols:
+                        date_dt = pd.to_datetime(col)
+                        dates_list.append(date_dt.strftime("%b %Y"))
 
-                        for date in rev_series.index[-4:]:
-                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
-                            val = rev_series[date]
-                            qoq_pct = rev_qoq.get(date, None)
-                            yoy_pct = rev_yoy.get(date, None)
+                        # Revenue
+                        r_val = None
+                        if rev_row and pd.notna(q_fin.loc[rev_row, col]):
+                            r_val = q_fin.loc[rev_row, col]
+                        rev_vals.append(r_val)
+
+                        # EPS
+                        e_val = None
+                        if eps_row and pd.notna(q_fin.loc[eps_row, col]):
+                            e_val = q_fin.loc[eps_row, col]
+                        elif ni_row and shares_row:
+                            ni = q_fin.loc[ni_row, col]
+                            sh = q_fin.loc[shares_row, col]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                e_val = ni / sh
+                        eps_vals.append(e_val)
+
+                    # Build table rows matching chronological index tracking
+                    for i in range(len(sorted_cols)):
+                        curr_date = dates_list[i]
+                        
+                        # --- Revenue Row Building ---
+                        r_curr = rev_vals[i]
+                        qoq_rev_str = "N/A"
+                        yoy_rev_str = "N/A"
+
+                        if r_curr is not None and pd.notna(r_curr):
+                            # QoQ (Index i - 1)
+                            if i > 0 and rev_vals[i - 1] is not None and rev_vals[i - 1] != 0:
+                                q_val = (r_curr - rev_vals[i - 1]) / abs(rev_vals[i - 1])
+                                qoq_rev_str = f"{q_val * 100:.2f}%"
+                            # YoY (Index i - 4)
+                            if i >= 4 and rev_vals[i - 4] is not None and rev_vals[i - 4] != 0:
+                                y_val = (r_curr - rev_vals[i - 4]) / abs(rev_vals[i - 4])
+                                yoy_rev_str = f"{y_val * 100:.2f}%"
 
                             rev_table_rows.append({
-                                "Quarter Ending": q_date_str,
-                                "Revenue": smart_format(val),
-                                "QoQ Growth": (
-                                    f"{qoq_pct * 100:.2f}%"
-                                    if pd.notna(qoq_pct)
-                                    else "N/A"
-                                ),
-                                "YoY Growth": (
-                                    f"{yoy_pct * 100:.2f}%"
-                                    if pd.notna(yoy_pct)
-                                    else "N/A"
-                                ),
+                                "Quarter Ending": curr_date,
+                                "Revenue": smart_format(r_curr),
+                                "QoQ Growth": qoq_rev_str,
+                                "YoY Growth": yoy_rev_str,
                             })
-                        rev_table_rows.reverse()
 
-                    # 2. EPS Calculation with QoQ & YoY Growth
-                    eps_series = pd.Series(dtype=float)
-                    if eps_row:
-                        eps_series = q_fin_sorted.loc[eps_row].dropna()
-                    elif ni_row and shares_row:
-                        ni_s = q_fin_sorted.loc[ni_row].dropna()
-                        sh_s = q_fin_sorted.loc[shares_row].dropna()
-                        common_idx = ni_s.index.intersection(sh_s.index)
-                        if not common_idx.empty:
-                            calc_eps = {d: (ni_s[d] / sh_s[d]) for d in common_idx if sh_s[d] > 0}
-                            eps_series = pd.Series(calc_eps).sort_index()
+                        # --- EPS Row Building ---
+                        e_curr = eps_vals[i]
+                        qoq_eps_str = "N/A"
+                        yoy_eps_str = "N/A"
 
-                    if not eps_series.empty:
-                        eps_qoq = eps_series.pct_change()
-                        eps_yoy = eps_series.pct_change(periods=4)
-
-                        for date in eps_series.index[-4:]:
-                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
-                            val = eps_series[date]
-                            qoq_pct = eps_qoq.get(date, None)
-                            yoy_pct = eps_yoy.get(date, None)
+                        if e_curr is not None and pd.notna(e_curr):
+                            # QoQ (Index i - 1)
+                            if i > 0 and eps_vals[i - 1] is not None and eps_vals[i - 1] != 0:
+                                q_eps = (e_curr - eps_vals[i - 1]) / abs(eps_vals[i - 1])
+                                qoq_eps_str = f"{q_eps * 100:.2f}%"
+                            # YoY (Index i - 4)
+                            if i >= 4 and eps_vals[i - 4] is not None and eps_vals[i - 4] != 0:
+                                y_eps = (e_curr - eps_vals[i - 4]) / abs(eps_vals[i - 4])
+                                yoy_eps_str = f"{y_eps * 100:.2f}%"
 
                             eps_table_rows.append({
-                                "Quarter Ending": q_date_str,
-                                "EPS": f"${val:,.2f}" if val is not None else "N/A",
-                                "QoQ Growth": (
-                                    f"{qoq_pct * 100:.2f}%"
-                                    if pd.notna(qoq_pct)
-                                    else "N/A"
-                                ),
-                                "YoY Growth": (
-                                    f"{yoy_pct * 100:.2f}%"
-                                    if pd.notna(yoy_pct)
-                                    else "N/A"
-                                ),
+                                "Quarter Ending": curr_date,
+                                "EPS": f"${e_curr:,.2f}",
+                                "QoQ Growth": qoq_eps_str,
+                                "YoY Growth": yoy_eps_str,
                             })
-                        eps_table_rows.reverse()
+
+                    # Reverse so the newest quarter sits at the top of the table
+                    rev_table_rows.reverse()
+                    eps_table_rows.reverse()
+                    
+                    # Limit to last 4 quarters for clean UI display
+                    rev_table_rows = rev_table_rows[:4]
+                    eps_table_rows = eps_table_rows[:4]
 
             except Exception:
                 pass
@@ -490,12 +507,12 @@ if ticker_input:
                     and not history_prices.empty
                 ):
                     eps_row = find_row_flexible(
-                        income_stmt, ["basic eps", "diluted eps", "net income"]
+                        income_stmt, ["basic eps", "diluted eps"]
                     )
+                    ni_row = find_row_flexible(income_stmt, ["net income"])
                     shares_row = find_row_flexible(
                         income_stmt, ["basic average shares", "diluted average shares"]
                     )
-                    ni_row = find_row_flexible(income_stmt, ["net income"])
 
                     for col_date in income_stmt.columns[:3]:
                         date_dt = pd.to_datetime(col_date)
@@ -503,28 +520,20 @@ if ticker_input:
 
                         eps_val = None
                         if eps_row and pd.notna(income_stmt.loc[eps_row, col_date]):
-                            val = income_stmt.loc[eps_row, col_date]
-                            if eps_row == ni_row and shares_row:
-                                sh = income_stmt.loc[shares_row, col_date]
-                                if pd.notna(sh) and sh > 0:
-                                    eps_val = val / sh
-                            else:
-                                eps_val = val
+                            eps_val = income_stmt.loc[eps_row, col_date]
                         elif ni_row and shares_row:
                             ni = income_stmt.loc[ni_row, col_date]
                             sh = income_stmt.loc[shares_row, col_date]
                             if pd.notna(ni) and pd.notna(sh) and sh > 0:
                                 eps_val = ni / sh
 
-                        if eps_val and eps_val > 50:
-                            sh = (
-                                income_stmt.loc[shares_row, col_date]
-                                if shares_row
-                                else None
-                            )
+                        # Fallback calculation safety check if EPS is raw net income scale
+                        if eps_val and eps_val > 50 and shares_row:
+                            sh = income_stmt.loc[shares_row, col_date]
                             if sh and sh > 0:
                                 eps_val = eps_val / sh
 
+                        # Find historical close price matching fiscal year end
                         hist_sub = history_prices.loc[:date_dt]
                         if hist_sub.empty:
                             hist_sub = history_prices
