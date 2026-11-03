@@ -249,78 +249,59 @@ if ticker_input:
                         q_fin, ["basic average shares", "diluted average shares"]
                     )
 
-                    # Ensure columns are sorted chronologically oldest -> newest
+                    # Sort columns chronologically oldest -> newest
                     q_fin_sorted = q_fin.reindex(sorted(q_fin.columns), axis=1)
+                    cols = list(q_fin_sorted.columns)
 
-                    # 1. Revenue YoY Calculation (periods=4)
-                    if rev_row:
-                        rev_series = q_fin_sorted.loc[rev_row].dropna()
-                        rev_yoy_pct = rev_series.pct_change(periods=4)
+                    # Extract the last 4 available quarters
+                    recent_cols = cols[-4:] if len(cols) >= 4 else cols
 
-                        for date in rev_series.index[-4:]:
-                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
-                            val = rev_series[date]
-                            pct = rev_yoy_pct.get(date, None)
+                    for col in recent_cols:
+                        date_dt = pd.to_datetime(col)
+                        q_date_str = date_dt.strftime("%b %Y")
 
-                            rev_table_rows.append({
-                                "Quarter Ending": q_date_str,
-                                "Revenue": smart_format(val),
-                                "Revenue YoY Growth": (
-                                    f"{pct * 100:.2f}%"
-                                    if pd.notna(pct)
-                                    else "N/A"
-                                ),
-                            })
-                        rev_table_rows.reverse()
+                        # --- Revenue Extraction ---
+                        rev_val = None
+                        if rev_row and pd.notna(q_fin_sorted.loc[rev_row, col]):
+                            rev_val = q_fin_sorted.loc[rev_row, col]
 
-                    # 2. EPS YoY Calculation (periods=4)
-                    eps_series = pd.Series(dtype=float)
-                    if eps_row:
-                        eps_series = q_fin_sorted.loc[eps_row].dropna()
-                    elif ni_row and shares_row:
-                        ni_s = q_fin_sorted.loc[ni_row].dropna()
-                        sh_s = q_fin_sorted.loc[shares_row].dropna()
-                        common_idx = ni_s.index.intersection(sh_s.index)
-                        if not common_idx.empty:
-                            calc_eps = {d: (ni_s[d] / sh_s[d]) for d in common_idx if sh_s[d] > 0}
-                            eps_series = pd.Series(calc_eps).sort_index()
+                        rev_table_rows.append({
+                            "Quarter Ending": q_date_str,
+                            "Revenue": smart_format(rev_val),
+                        })
 
-                    if not eps_series.empty:
-                        eps_yoy_pct = eps_series.pct_change(periods=4)
-                        for date in eps_series.index[-4:]:
-                            q_date_str = pd.to_datetime(date).strftime("%b %Y")
-                            val = eps_series[date]
-                            pct = eps_yoy_pct.get(date, None)
+                        # --- EPS Extraction ---
+                        eps_val = None
+                        if eps_row and pd.notna(q_fin_sorted.loc[eps_row, col]):
+                            eps_val = q_fin_sorted.loc[eps_row, col]
+                        elif ni_row and shares_row:
+                            ni = q_fin_sorted.loc[ni_row, col]
+                            sh = q_fin_sorted.loc[shares_row, col]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                eps_val = ni / sh
 
-                            eps_table_rows.append({
-                                "Quarter Ending": q_date_str,
-                                "EPS": f"${val:,.2f}",
-                                "EPS YoY Growth": (
-                                    f"{pct * 100:.2f}%"
-                                    if pd.notna(pct)
-                                    else "N/A"
-                                ),
-                            })
-                        eps_table_rows.reverse()
+                        eps_table_rows.append({
+                            "Quarter Ending": q_date_str,
+                            "EPS": f"${eps_val:,.2f}" if eps_val is not None else "N/A",
+                        })
+
+                    rev_table_rows.reverse()
+                    eps_table_rows.reverse()
 
             except Exception:
                 pass
 
-            st.markdown("##### Recent Quarterly Revenue Performance (YoY)")
+            st.markdown("##### Recent Quarterly Revenue Performance (Last 4 Quarters)")
             if rev_table_rows:
-                df_rev = pd.DataFrame(rev_table_rows)[
-                    ["Quarter Ending", "Revenue", "Revenue YoY Growth"]
-                ]
+                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue"]]
                 st.dataframe(df_rev, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly revenue data unavailable.")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("##### Recent Quarterly EPS Performance (YoY)")
+            st.markdown("##### Recent Quarterly EPS Performance (Last 4 Quarters)")
             if eps_table_rows:
-                df_eps = pd.DataFrame(eps_table_rows)[
-                    ["Quarter Ending", "EPS", "EPS YoY Growth"]
-                ]
+                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS"]]
                 st.dataframe(df_eps, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly EPS data unavailable.")
