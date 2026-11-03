@@ -65,7 +65,6 @@ def find_row_flexible(df, keywords):
 def extract_estimate_growth(df, period_key):
     """Safely extracts forward growth decimal from yfinance estimate DataFrames."""
     if df is not None and not df.empty:
-        # Check if period exists in index or columns depending on data structure
         if period_key in df.columns and "growth" in df.index:
             val = df.loc["growth", period_key]
             if pd.notna(val):
@@ -93,22 +92,33 @@ if ticker_input:
             f"Unable to retrieve data for ticker **'{ticker_input}'**. Please verify the symbol and try again."
         )
     else:
-        # Instantiate yf.Ticker for statements/estimates calls
         ticker = yf.Ticker(ticker_input)
 
         current_price = info.get("currentPrice") or info.get(
             "regularMarketPrice"
         )
         name_str = info.get("longName", ticker_input)
+        fifty_two_low = info.get("fiftyTwoWeekLow")
+        fifty_two_high = info.get("fiftyTwoWeekHigh")
 
-        # Top Header Banner
-        col_head1, col_head2 = st.columns([3, 1])
+        # Top Header Banner with combined Current Price & 52-Week Range
+        col_head1, col_head2 = st.columns([2.5, 1.5])
         with col_head1:
             st.title(f"{name_str} ({ticker_input})")
             st.caption("Fundamental Analysis Dashboard")
         with col_head2:
             price_str = f"${current_price:,.2f}" if current_price else "N/A"
-            st.metric(label="Current Price", value=price_str)
+            range_str = (
+                f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}"
+                if (fifty_two_low and fifty_two_high)
+                else "N/A"
+            )
+            st.metric(
+                label="Current Price",
+                value=price_str,
+                delta=f"52-Wk Range: {range_str}",
+                delta_color="off",
+            )
 
         st.markdown("---")
 
@@ -140,8 +150,6 @@ if ticker_input:
             else None
         )
 
-        fifty_two_low = info.get("fiftyTwoWeekLow")
-        fifty_two_high = info.get("fiftyTwoWeekHigh")
         analyst_target = info.get("targetMeanPrice")
 
         # Current/Past Reported Quarterly Growth
@@ -153,7 +161,7 @@ if ticker_input:
         operating_margins = info.get("operatingMargins")
         free_cashflow = info.get("freeCashflow")
 
-        # Forward Estimates extraction (Strict, without falling back to past actuals)
+        # Forward Estimates extraction
         rev_growth_1y, rev_growth_2y = None, None
         eps_growth_1y, eps_growth_2y = None, None
         eps_2y_avg = None
@@ -212,27 +220,77 @@ if ticker_input:
             m4.metric("PEG Ratio", f"{peg_ratio:.2f}" if peg_ratio else "N/A")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3 = st.columns(3)
             c1.metric(
-                "52-Week Range",
-                f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}"
-                if fifty_two_low and fifty_two_high
-                else "N/A",
-            )
-            c2.metric(
                 "Analyst Target",
                 f"${analyst_target:,.2f}" if analyst_target else "N/A",
             )
-            c3.metric(
+            c2.metric(
                 "Dividend Yield",
                 f"{dividend_yield:.2f}%"
                 if dividend_yield is not None
                 else "N/A",
             )
-            c4.metric(
+            c3.metric(
                 "Payout Ratio",
                 f"{payout_ratio:.2f}%" if payout_ratio is not None else "N/A",
             )
+
+            # Historical P/E Ratio (Last 3 Years)
+            st.markdown("---")
+            st.markdown("##### Historical P/E Ratio (Last 3 Years)")
+            pe_history_data = []
+            try:
+                income_stmt = ticker.financials
+                history_prices = ticker.history(period="4y")
+
+                if (
+                    income_stmt is not None
+                    and not income_stmt.empty
+                    and not history_prices.empty
+                ):
+                    eps_row = find_row_flexible(
+                        income_stmt, ["basic eps", "diluted eps"]
+                    )
+                    shares_row = find_row_flexible(
+                        income_stmt, ["basic average shares", "diluted average shares"]
+                    )
+                    ni_row = find_row_flexible(income_stmt, ["net income"])
+
+                    for col_date in income_stmt.columns[:3]:
+                        date_dt = pd.to_datetime(col_date)
+                        year_str = date_dt.strftime("%Y")
+
+                        # Calculate EPS for the year
+                        eps_val = None
+                        if eps_row and pd.notna(income_stmt.loc[eps_row, col_date]):
+                            eps_val = income_stmt.loc[eps_row, col_date]
+                        elif ni_row and shares_row:
+                            ni = income_stmt.loc[ni_row, col_date]
+                            sh = income_stmt.loc[shares_row, col_date]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                eps_val = ni / sh
+
+                        # Find historical price near fiscal year-end
+                        hist_sub = history_prices.loc[:date_dt]
+                        if not hist_sub.empty and eps_val and eps_val > 0:
+                            close_p = hist_sub["Close"].iloc[-1]
+                            hist_pe = close_p / eps_val
+                            pe_history_data.append({
+                                "Year": year_str,
+                                "Fiscal Year End": date_dt.strftime("%b %d, %Y"),
+                                "Year-End Price": f"${close_p:,.2f}",
+                                "EPS": f"${eps_val:,.2f}",
+                                "Historical P/E": f"{hist_pe:.2f}x",
+                            })
+            except Exception:
+                pass
+
+            if pe_history_data:
+                df_pe = pd.DataFrame(pe_history_data)
+                st.dataframe(df_pe, use_container_width=True, hide_index=True)
+            else:
+                st.info("Historical P/E data for the last 3 years is unavailable.")
 
         with tab2:
             st.subheader("Revenue & EPS Growth Projections")
@@ -364,21 +422,14 @@ if ticker_input:
                                     "Quarter Ending": pd.to_datetime(
                                         date
                                     ).strftime("%b %Y"),
-                                    "Net Margin (%)": round((ni / rev) * 100, 2),
+                                    "Net Margin (%)": f"{((ni / rev) * 100):.2f}%",
                                 })
             except Exception:
                 pass
 
             if q_margins_data:
                 df_m = pd.DataFrame(q_margins_data)
-                col_tbl, col_chart = st.columns([1, 1])
-                with col_tbl:
-                    st.dataframe(
-                        df_m, use_container_width=True, hide_index=True
-                    )
-                with col_chart:
-                    chart_data = df_m.set_index("Quarter Ending")
-                    st.bar_chart(chart_data)
+                st.dataframe(df_m, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly net margin data unavailable.")
 
