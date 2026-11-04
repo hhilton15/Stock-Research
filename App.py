@@ -228,13 +228,12 @@ if ticker_input:
             )
 
         with tab2:
-            st.subheader("Revenue & EPS Growth Projections")
+            st.subheader("Revenue & EPS Sequential Growth")
 
             rev_table_rows = []
             eps_table_rows = []
 
             try:
-                # Fetch quarterly financials
                 q_fin = ticker.quarterly_financials
                 if q_fin is not None and not q_fin.empty:
                     rev_row = find_revenue_row(q_fin)
@@ -272,64 +271,44 @@ if ticker_input:
                                 e_val = ni / sh
                         eps_vals.append(e_val)
 
-                    # Build table rows using standard index tracking
-                    num_periods = len(sorted_cols)
-                    for i in range(num_periods):
+                    # Build table rows tracking sequential QoQ growth
+                    for i in range(len(sorted_cols)):
                         curr_date = dates_list[i]
                         
-                        # --- Revenue Row Building ---
+                        # --- Revenue Row ---
                         r_curr = rev_vals[i]
                         qoq_rev_str = "N/A"
-                        yoy_rev_str = "N/A"
 
                         if r_curr is not None and pd.notna(r_curr):
-                            # QoQ (Index i - 1)
                             if i > 0 and rev_vals[i - 1] is not None and rev_vals[i - 1] != 0:
                                 q_val = (r_curr - rev_vals[i - 1]) / abs(rev_vals[i - 1])
                                 qoq_rev_str = f"{q_val * 100:.2f}%"
-                            
-                            # YoY Fix: Check if index i - 4 exists; fallback to available 4-quarter comparison
-                            yoy_idx = i - 4
-                            if yoy_idx >= 0 and rev_vals[yoy_idx] is not None and rev_vals[yoy_idx] != 0:
-                                y_val = (r_curr - rev_vals[yoy_idx]) / abs(rev_vals[yoy_idx])
-                                yoy_rev_str = f"{y_val * 100:.2f}%"
 
                             rev_table_rows.append({
                                 "Quarter Ending": curr_date,
                                 "Revenue": smart_format(r_curr),
                                 "QoQ Growth": qoq_rev_str,
-                                "YoY Growth": yoy_rev_str,
                             })
 
-                        # --- EPS Row Building ---
+                        # --- EPS Row ---
                         e_curr = eps_vals[i]
                         qoq_eps_str = "N/A"
-                        yoy_eps_str = "N/A"
 
                         if e_curr is not None and pd.notna(e_curr):
-                            # QoQ (Index i - 1)
                             if i > 0 and eps_vals[i - 1] is not None and eps_vals[i - 1] != 0:
                                 q_eps = (e_curr - eps_vals[i - 1]) / abs(eps_vals[i - 1])
                                 qoq_eps_str = f"{q_eps * 100:.2f}%"
-                            
-                            # YoY Fix: Check if index i - 4 exists
-                            yoy_idx = i - 4
-                            if yoy_idx >= 0 and eps_vals[yoy_idx] is not None and eps_vals[yoy_idx] != 0:
-                                y_eps = (e_curr - eps_vals[yoy_idx]) / abs(eps_vals[yoy_idx])
-                                yoy_eps_str = f"{y_eps * 100:.2f}%"
 
                             eps_table_rows.append({
                                 "Quarter Ending": curr_date,
                                 "EPS": f"${e_curr:,.2f}",
                                 "QoQ Growth": qoq_eps_str,
-                                "YoY Growth": yoy_eps_str,
                             })
 
                     # Reverse so newest quarter sits at the top
                     rev_table_rows.reverse()
                     eps_table_rows.reverse()
                     
-                    # Take most recent quarters for clean display
                     rev_table_rows = rev_table_rows[:4]
                     eps_table_rows = eps_table_rows[:4]
 
@@ -338,7 +317,7 @@ if ticker_input:
 
             st.markdown("##### Recent Quarterly Revenue Performance")
             if rev_table_rows:
-                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue", "QoQ Growth", "YoY Growth"]]
+                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue", "QoQ Growth"]]
                 st.dataframe(df_rev, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly revenue data unavailable.")
@@ -346,7 +325,7 @@ if ticker_input:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("##### Recent Quarterly EPS Performance")
             if eps_table_rows:
-                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS", "QoQ Growth", "YoY Growth"]]
+                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS", "QoQ Growth"]]
                 st.dataframe(df_eps, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly EPS data unavailable.")
@@ -449,7 +428,6 @@ if ticker_input:
             st.subheader("Historical P/E Ratio (Last 3 Years)")
             pe_history_data = []
             try:
-                # Fetch annual income statement and historical prices
                 income_stmt = ticker.financials
                 history_prices = ticker.history(period="5y")
 
@@ -464,12 +442,10 @@ if ticker_input:
                         income_stmt, ["basic average shares", "diluted average shares"]
                     )
 
-                    # Historical P/E Fix 1: Strip timezone metadata from price index
                     if history_prices.index.tz is not None:
                         history_prices.index = history_prices.index.tz_localize(None)
 
                     for col_date in income_stmt.columns[:3]:
-                        # Historical P/E Fix 2: Convert column header to timezone-naive datetime
                         date_dt = pd.to_datetime(col_date)
                         if hasattr(date_dt, 'tz') and date_dt.tz is not None:
                             date_dt = date_dt.tz_localize(None)
@@ -485,13 +461,11 @@ if ticker_input:
                             if pd.notna(ni) and pd.notna(sh) and sh > 0:
                                 eps_val = ni / sh
 
-                        # Fallback calculation if EPS is reported in raw total net income scale
                         if eps_val and abs(eps_val) > 1000 and shares_row:
                             sh = income_stmt.loc[shares_row, col_date]
                             if sh and sh > 0:
                                 eps_val = eps_val / sh
 
-                        # Historical P/E Fix 3: Get stock price on or closest prior to fiscal year end
                         hist_sub = history_prices.loc[:date_dt]
                         if not hist_sub.empty and eps_val and eps_val > 0:
                             close_p = hist_sub["Close"].iloc[-1]
@@ -500,7 +474,6 @@ if ticker_input:
                                 "Fiscal Year": year_str,
                                 "Fiscal Year End": date_dt.strftime("%b %d, %Y"),
                                 "Year-End Price": f"${close_p:,.2f}",
-                                "EPS": f"${eps_val:,.2f}",
                                 "Historical P/E": f"{hist_pe:.2f}x",
                             })
             except Exception:
