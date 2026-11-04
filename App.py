@@ -54,6 +54,18 @@ def smart_format(val):
         return f"${val:,.0f}"
 
 
+def format_rev_3dec(val):
+    if pd.isna(val) or val is None:
+        return "N/A"
+    abs_val = abs(val)
+    if abs_val >= 1e9:
+        return f"${val / 1e9:,.3f}B"
+    elif abs_val >= 1e6:
+        return f"${val / 1e6:,.2f}M"
+    else:
+        return f"${val:,.0f}"
+
+
 def find_revenue_row(df):
     """Specifically targets Total Revenue while ignoring Cost of Revenue, Tax, etc."""
     for row in df.index:
@@ -228,139 +240,70 @@ if ticker_input:
             )
 
         with tab2:
-            st.subheader("Revenue & EPS Sequential & YoY Growth")
+            st.subheader("Annual Financial Trends & Forward Expectations")
 
-            rev_table_rows = []
-            eps_table_rows = []
-
+            # --- Annual Multi-Year Financial Trends Table ---
+            annual_table_rows = []
             try:
-                q_fin = ticker.quarterly_financials
-                if q_fin is not None and not q_fin.empty:
-                    rev_row = find_revenue_row(q_fin)
-                    eps_row = find_row_flexible(q_fin, ["basic eps", "diluted eps"])
-                    ni_row = find_row_flexible(q_fin, ["net income"])
-                    shares_row = find_row_flexible(
-                        q_fin, ["basic average shares", "diluted average shares"]
-                    )
+                annual_fin = ticker.financials
+                if annual_fin is not None and not annual_fin.empty:
+                    rev_row_a = find_revenue_row(annual_fin)
+                    eps_row_a = find_row_flexible(annual_fin, ["basic eps", "diluted eps"])
+                    ni_row_a = find_row_flexible(annual_fin, ["net income"])
+                    shares_row_a = find_row_flexible(annual_fin, ["basic average shares", "diluted average shares"])
 
-                    # Sort columns chronologically (oldest to newest)
-                    sorted_cols = sorted(list(q_fin.columns))
-                    
-                    rev_vals = []
-                    eps_vals = []
-                    dates_list = []
+                    sorted_annual_cols = sorted(list(annual_fin.columns))
+                    a_dates, a_revs, a_eps = [], [], []
 
-                    for col in sorted_cols:
+                    for col in sorted_annual_cols:
                         date_dt = pd.to_datetime(col)
-                        dates_list.append(date_dt.strftime("%b %Y"))
+                        a_dates.append(date_dt.strftime("%Y"))
 
-                        # Revenue
-                        r_val = None
-                        if rev_row and pd.notna(q_fin.loc[rev_row, col]):
-                            r_val = q_fin.loc[rev_row, col]
-                        rev_vals.append(r_val)
+                        r_val = annual_fin.loc[rev_row_a, col] if rev_row_a and pd.notna(annual_fin.loc[rev_row_a, col]) else None
+                        a_revs.append(r_val)
 
-                        # EPS
                         e_val = None
-                        if eps_row and pd.notna(q_fin.loc[eps_row, col]):
-                            e_val = q_fin.loc[eps_row, col]
-                        elif ni_row and shares_row:
-                            ni = q_fin.loc[ni_row, col]
-                            sh = q_fin.loc[shares_row, col]
+                        if eps_row_a and pd.notna(annual_fin.loc[eps_row_a, col]):
+                            e_val = annual_fin.loc[eps_row_a, col]
+                        elif ni_row_a and shares_row_a:
+                            ni = annual_fin.loc[ni_row_a, col]
+                            sh = annual_fin.loc[shares_row_a, col]
                             if pd.notna(ni) and pd.notna(sh) and sh > 0:
                                 e_val = ni / sh
-                        eps_vals.append(e_val)
+                        a_eps.append(e_val)
 
-                    # Helper formatting function for 3 decimal places ($1.935B)
-                    def format_rev_3dec(val):
-                        if pd.isna(val) or val is None:
-                            return "N/A"
-                        abs_val = abs(val)
-                        if abs_val >= 1e9:
-                            return f"${val / 1e9:,.3f}B"
-                        elif abs_val >= 1e6:
-                            return f"${val / 1e6:,.2f}M"
-                        else:
-                            return f"${val:,.0f}"
+                    for i in range(len(sorted_annual_cols)):
+                        curr_yr = a_dates[i]
+                        r_curr = a_revs[i]
+                        e_curr = a_eps[i]
 
-                    # Build table rows tracking QoQ (previous index) and YoY (4 periods back)
-                    num_periods = len(sorted_cols)
-                    for i in range(num_periods):
-                        curr_date = dates_list[i]
-                        
-                        # --- Revenue Row ---
-                        r_curr = rev_vals[i]
-                        qoq_rev_str = "N/A"
-                        yoy_rev_str = "N/A"
+                        rev_growth_yoy = "N/A"
+                        if i > 0 and a_revs[i - 1] is not None and a_revs[i - 1] != 0 and r_curr is not None:
+                            g = (r_curr - a_revs[i - 1]) / abs(a_revs[i - 1])
+                            rev_growth_yoy = f"{g * 100:.2f}%"
 
-                        if r_curr is not None and pd.notna(r_curr):
-                            # QoQ (Index i - 1)
-                            if i > 0 and rev_vals[i - 1] is not None and rev_vals[i - 1] != 0:
-                                q_val = (r_curr - rev_vals[i - 1]) / abs(rev_vals[i - 1])
-                                qoq_rev_str = f"{q_val * 100:.2f}%"
+                        eps_growth_yoy = "N/A"
+                        if i > 0 and a_eps[i - 1] is not None and a_eps[i - 1] != 0 and e_curr is not None:
+                            g_eps = (e_curr - a_eps[i - 1]) / abs(a_eps[i - 1])
+                            eps_growth_yoy = f"{g_eps * 100:.2f}%"
 
-                            # YoY (Index i - 4, same quarter previous year)
-                            yoy_idx = i - 4
-                            if yoy_idx >= 0 and rev_vals[yoy_idx] is not None and rev_vals[yoy_idx] != 0:
-                                y_val = (r_curr - rev_vals[yoy_idx]) / abs(rev_vals[yoy_idx])
-                                yoy_rev_str = f"{y_val * 100:.2f}%"
-
-                            rev_table_rows.append({
-                                "Quarter Ending": curr_date,
-                                "Revenue": format_rev_3dec(r_curr),
-                                "QoQ Growth": qoq_rev_str,
-                                "YoY Growth": yoy_rev_str,
-                            })
-
-                        # --- EPS Row ---
-                        e_curr = eps_vals[i]
-                        qoq_eps_str = "N/A"
-                        yoy_eps_str = "N/A"
-
-                        if e_curr is not None and pd.notna(e_curr):
-                            # QoQ (Index i - 1)
-                            if i > 0 and eps_vals[i - 1] is not None and eps_vals[i - 1] != 0:
-                                q_eps = (e_curr - eps_vals[i - 1]) / abs(eps_vals[i - 1])
-                                qoq_eps_str = f"{q_eps * 100:.2f}%"
-
-                            # YoY (Index i - 4)
-                            yoy_idx = i - 4
-                            if yoy_idx >= 0 and eps_vals[yoy_idx] is not None and eps_vals[yoy_idx] != 0:
-                                y_eps = (e_curr - eps_vals[yoy_idx]) / abs(eps_vals[yoy_idx])
-                                yoy_eps_str = f"{y_eps * 100:.2f}%"
-
-                            eps_table_rows.append({
-                                "Quarter Ending": curr_date,
-                                "EPS": f"${e_curr:,.2f}",
-                                "QoQ Growth": qoq_eps_str,
-                                "YoY Growth": yoy_eps_str,
-                            })
-
-                    # Reverse so newest quarter sits at the top
-                    rev_table_rows.reverse()
-                    eps_table_rows.reverse()
-                    
-                    # Lock to ONLY the latest 4 reported quarters
-                    rev_table_rows = rev_table_rows[:4]
-                    eps_table_rows = eps_table_rows[:4]
-
+                        annual_table_rows.append({
+                            "Fiscal Year": curr_yr,
+                            "Revenue": format_rev_3dec(r_curr),
+                            "Revenue Growth": rev_growth_yoy,
+                            "EPS": f"${e_curr:,.2f}" if e_curr is not None else "N/A",
+                            "EPS Growth": eps_growth_yoy,
+                        })
+                    annual_table_rows.reverse()
             except Exception:
                 pass
 
-            st.markdown("##### Recent Quarterly Revenue Performance")
-            if rev_table_rows:
-                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue", "QoQ Growth", "YoY Growth"]]
-                st.dataframe(df_rev, use_container_width=True, hide_index=True)
+            st.markdown("##### Multi-Year Annual Financial Performance")
+            if annual_table_rows:
+                df_annual = pd.DataFrame(annual_table_rows)
+                st.dataframe(df_annual, use_container_width=True, hide_index=True)
             else:
-                st.info("Quarterly revenue data unavailable.")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("##### Recent Quarterly EPS Performance")
-            if eps_table_rows:
-                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS", "QoQ Growth", "YoY Growth"]]
-                st.dataframe(df_eps, use_container_width=True, hide_index=True)
-            else:
-                st.info("Quarterly EPS data unavailable.")
+                st.info("Annual financial trends data unavailable.")
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("##### Forward Analyst Expectations")
@@ -431,7 +374,99 @@ if ticker_input:
                 st.info("Quarterly Free Cash Flow data unavailable.")
 
         with tab4:
-            st.subheader("Net Margin % Trend (Last 4 Quarters)")
+            st.subheader("Quarterly Data & Performance Trends")
+
+            rev_table_rows = []
+            eps_table_rows = []
+
+            try:
+                q_fin = ticker.quarterly_financials
+                if q_fin is not None and not q_fin.empty:
+                    rev_row = find_revenue_row(q_fin)
+                    eps_row = find_row_flexible(q_fin, ["basic eps", "diluted eps"])
+                    ni_row = find_row_flexible(q_fin, ["net income"])
+                    shares_row = find_row_flexible(
+                        q_fin, ["basic average shares", "diluted average shares"]
+                    )
+
+                    sorted_cols = sorted(list(q_fin.columns))
+                    rev_vals = []
+                    eps_vals = []
+                    dates_list = []
+
+                    for col in sorted_cols:
+                        date_dt = pd.to_datetime(col)
+                        dates_list.append(date_dt.strftime("%b %Y"))
+
+                        r_val = q_fin.loc[rev_row, col] if rev_row and pd.notna(q_fin.loc[rev_row, col]) else None
+                        rev_vals.append(r_val)
+
+                        e_val = None
+                        if eps_row and pd.notna(q_fin.loc[eps_row, col]):
+                            e_val = q_fin.loc[eps_row, col]
+                        elif ni_row and shares_row:
+                            ni = q_fin.loc[ni_row, col]
+                            sh = q_fin.loc[shares_row, col]
+                            if pd.notna(ni) and pd.notna(sh) and sh > 0:
+                                e_val = ni / sh
+                        eps_vals.append(e_val)
+
+                    num_periods = len(sorted_cols)
+                    for i in range(num_periods):
+                        curr_date = dates_list[i]
+                        
+                        # --- Revenue Row (QoQ Only) ---
+                        r_curr = rev_vals[i]
+                        qoq_rev_str = "N/A"
+                        if r_curr is not None and pd.notna(r_curr):
+                            if i > 0 and rev_vals[i - 1] is not None and rev_vals[i - 1] != 0:
+                                q_val = (r_curr - rev_vals[i - 1]) / abs(rev_vals[i - 1])
+                                qoq_rev_str = f"{q_val * 100:.2f}%"
+
+                            rev_table_rows.append({
+                                "Quarter Ending": curr_date,
+                                "Revenue": format_rev_3dec(r_curr),
+                                "QoQ Growth": qoq_rev_str,
+                            })
+
+                        # --- EPS Row (QoQ Only) ---
+                        e_curr = eps_vals[i]
+                        qoq_eps_str = "N/A"
+                        if e_curr is not None and pd.notna(e_curr):
+                            if i > 0 and eps_vals[i - 1] is not None and eps_vals[i - 1] != 0:
+                                q_eps = (e_curr - eps_vals[i - 1]) / abs(eps_vals[i - 1])
+                                qoq_eps_str = f"{q_eps * 100:.2f}%"
+
+                            eps_table_rows.append({
+                                "Quarter Ending": curr_date,
+                                "EPS": f"${e_curr:,.2f}",
+                                "QoQ Growth": qoq_eps_str,
+                            })
+
+                    rev_table_rows.reverse()
+                    eps_table_rows.reverse()
+                    rev_table_rows = rev_table_rows[:4]
+                    eps_table_rows = eps_table_rows[:4]
+            except Exception:
+                pass
+
+            st.markdown("##### Recent Quarterly Revenue Performance")
+            if rev_table_rows:
+                df_rev = pd.DataFrame(rev_table_rows)[["Quarter Ending", "Revenue", "QoQ Growth"]]
+                st.dataframe(df_rev, use_container_width=True, hide_index=True)
+            else:
+                st.info("Quarterly revenue data unavailable.")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("##### Recent Quarterly EPS Performance")
+            if eps_table_rows:
+                df_eps = pd.DataFrame(eps_table_rows)[["Quarter Ending", "EPS", "QoQ Growth"]]
+                st.dataframe(df_eps, use_container_width=True, hide_index=True)
+            else:
+                st.info("Quarterly EPS data unavailable.")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("##### Net Margin % Trend (Last 4 Quarters)")
             q_margins_data = []
             try:
                 q_fin = ticker.quarterly_financials
