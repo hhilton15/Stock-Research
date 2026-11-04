@@ -271,6 +271,18 @@ if ticker_input:
                                 e_val = ni / sh
                         eps_vals.append(e_val)
 
+                    # Helper formatting function for 3 decimal places ($1.935B)
+                    def format_rev_3dec(val):
+                        if pd.isna(val) or val is None:
+                            return "N/A"
+                        abs_val = abs(val)
+                        if abs_val >= 1e9:
+                            return f"${val / 1e9:,.3f}B"
+                        elif abs_val >= 1e6:
+                            return f"${val / 1e6:,.2f}M"
+                        else:
+                            return f"${val:,.0f}"
+
                     # Build table rows tracking QoQ (previous index) and YoY (4 periods back)
                     num_periods = len(sorted_cols)
                     for i in range(num_periods):
@@ -295,7 +307,7 @@ if ticker_input:
 
                             rev_table_rows.append({
                                 "Quarter Ending": curr_date,
-                                "Revenue": smart_format(r_curr),
+                                "Revenue": format_rev_3dec(r_curr),
                                 "QoQ Growth": qoq_rev_str,
                                 "YoY Growth": yoy_rev_str,
                             })
@@ -328,6 +340,7 @@ if ticker_input:
                     rev_table_rows.reverse()
                     eps_table_rows.reverse()
                     
+                    # Lock to ONLY the latest 4 reported quarters
                     rev_table_rows = rev_table_rows[:4]
                     eps_table_rows = eps_table_rows[:4]
 
