@@ -112,6 +112,31 @@ if ticker_input:
         fifty_two_low = info.get("fiftyTwoWeekLow")
         fifty_two_high = info.get("fiftyTwoWeekHigh")
 
+        # Calculate or extract daily change percentage
+        daily_change_pct = info.get("regularMarketChangePercent")
+        if daily_change_pct is None:
+            try:
+                hist = ticker.history(period="2d")
+                if len(hist) >= 2:
+                    p_close = hist["Close"].iloc[-2]
+                    c_close = hist["Close"].iloc[-1]
+                    daily_change_pct = ((c_close - p_close) / p_close) * 100
+            except Exception:
+                pass
+
+        # Calculate Year-to-Date (YTD) percentage change
+        ytd_change_pct = None
+        try:
+            current_year = pd.Timestamp.now().year
+            ytd_start = f"{current_year}-01-01"
+            hist_ytd = ticker.history(start=ytd_start)
+            if not hist_ytd.empty:
+                start_price = hist_ytd["Close"].iloc[0]
+                end_price = hist_ytd["Close"].iloc[-1]
+                ytd_change_pct = ((end_price - start_price) / start_price) * 100
+        except Exception:
+            pass
+
         # Top Header Banner
         col_head1, col_head2 = st.columns([2.5, 1.5])
         with col_head1:
@@ -120,16 +145,27 @@ if ticker_input:
         with col_head2:
             price_str = f"${current_price:,.2f}" if current_price else "N/A"
             range_str = (
-                f"${fifty_two_low:,.2f} -${fifty_two_high:,.2f}"
+                f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}"
                 if (fifty_two_low and fifty_two_high)
                 else "N/A"
             )
+            delta_val = (
+                f"{daily_change_pct:+.2f}% Today"
+                if daily_change_pct is not None
+                else None
+            )
+            ytd_str = (
+                f"{ytd_change_pct:+.2f}% YTD"
+                if ytd_change_pct is not None
+                else "N/A"
+            )
+
             st.metric(
                 label="Current Price",
                 value=price_str,
-                delta=f"52-Wk Range: {range_str}",
-                delta_color="off",
+                delta=delta_val,
             )
+            st.caption(f"52-Wk Range: {range_str} | YTD: {ytd_str}")
 
         st.markdown("---")
 
@@ -171,7 +207,6 @@ if ticker_input:
         try:
             rev_est = ticker.revenue_estimate
             if rev_est is not None and not rev_est.empty:
-                # yfinance format check (Handles both row/col arrangements)
                 for idx in rev_est.index:
                     if "growth" in str(idx).lower():
                         for col in rev_est.columns:
@@ -182,13 +217,14 @@ if ticker_input:
                                     rev_growth_1y = float(val)
                                 elif "+2y" in c_lower or c_lower == "2y":
                                     rev_growth_2y = float(val)
-                # Fallback if structure is transposed
                 if rev_growth_1y is None and "+1y" in rev_est.index:
                     val = rev_est.loc["+1y"].get("growth")
-                    if pd.notna(val): rev_growth_1y = float(val)
+                    if pd.notna(val):
+                        rev_growth_1y = float(val)
                 if rev_growth_2y is None and "+2y" in rev_est.index:
                     val = rev_est.loc["+2y"].get("growth")
-                    if pd.notna(val): rev_growth_2y = float(val)
+                    if pd.notna(val):
+                        rev_growth_2y = float(val)
         except Exception:
             pass
 
@@ -214,16 +250,18 @@ if ticker_input:
                                 if "+2y" in c_lower or c_lower == "2y":
                                     eps_2y_avg = float(val)
 
-                # Fallback checks if indexes/columns are reversed
                 if eps_growth_1y is None and "+1y" in earn_est.index:
                     val = earn_est.loc["+1y"].get("growth")
-                    if pd.notna(val): eps_growth_1y = float(val)
+                    if pd.notna(val):
+                        eps_growth_1y = float(val)
                 if eps_growth_2y is None and "+2y" in earn_est.index:
                     val = earn_est.loc["+2y"].get("growth")
-                    if pd.notna(val): eps_growth_2y = float(val)
+                    if pd.notna(val):
+                        eps_growth_2y = float(val)
                 if eps_2y_avg is None and "+2y" in earn_est.index:
                     val = earn_est.loc["+2y"].get("avg") or earn_est.loc["+2y"].get("mean")
-                    if pd.notna(val): eps_2y_avg = float(val)
+                    if pd.notna(val):
+                        eps_2y_avg = float(val)
         except Exception:
             pass
 
