@@ -109,14 +109,12 @@ if ticker_input:
     else:
         ticker = yf.Ticker(ticker_input)
 
-        current_price = info.get("currentPrice") or info.get(
-            "regularMarketPrice"
-        )
+        current_price = info.get("currentPrice") or info.get("regularMarketPrice")
         name_str = info.get("longName", ticker_input)
         fifty_two_low = info.get("fiftyTwoWeekLow")
         fifty_two_high = info.get("fiftyTwoWeekHigh")
 
-        # Top Header Banner with combined Current Price & 52-Week Range
+        # Top Header Banner
         col_head1, col_head2 = st.columns([2.5, 1.5])
         with col_head1:
             st.title(f"{name_str} ({ticker_input})")
@@ -145,15 +143,11 @@ if ticker_input:
 
         # Dividend Yield
         div_rate = info.get("dividendRate")
-        raw_div_yield = info.get("dividendYield") or info.get(
-            "trailingAnnualDividendYield"
-        )
+        raw_div_yield = info.get("dividendYield") or info.get("trailingAnnualDividendYield")
         if div_rate and current_price and current_price > 0:
             dividend_yield = (div_rate / current_price) * 100
         elif raw_div_yield is not None:
-            dividend_yield = (
-                raw_div_yield * 100 if raw_div_yield < 1 else raw_div_yield
-            )
+            dividend_yield = raw_div_yield * 100 if raw_div_yield < 1 else raw_div_yield
         else:
             dividend_yield = None
 
@@ -166,10 +160,9 @@ if ticker_input:
         )
 
         analyst_target = info.get("targetMeanPrice")
-
-        profit_margins = info.get("profitmargins") if "profitmargins" in info else info.get("profitMargins")
-        gross_margins = info.get("grossmargins") if "grossmargins" in info else info.get("grossMargins")
-        operating_margins = info.get("operatingmargins") if "operatingmargins" in info else info.get("operatingMargins")
+        profit_margins = info.get("profitMargins") or info.get("profitmargins")
+        gross_margins = info.get("grossMargins") or info.get("grossmargins")
+        operating_margins = info.get("operatingMargins") or info.get("operatingmargins")
         free_cashflow = info.get("freeCashflow")
 
         # Forward Estimates extraction
@@ -217,31 +210,17 @@ if ticker_input:
         with tab1:
             st.subheader("Valuation & Pricing")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric(
-                "Trailing P/E",
-                f"{trailing_pe:.2f}x" if trailing_pe else "N/A",
-            )
-            m2.metric(
-                "1-Yr Forward P/E",
-                f"{forward_pe_1y:.2f}x" if forward_pe_1y else "N/A",
-            )
-            m3.metric(
-                "2-Yr Forward P/E",
-                f"{forward_pe_2y:.2f}x" if forward_pe_2y else "N/A",
-            )
+            m1.metric("Trailing P/E", f"{trailing_pe:.2f}x" if trailing_pe else "N/A")
+            m2.metric("1-Yr Forward P/E", f"{forward_pe_1y:.2f}x" if forward_pe_1y else "N/A")
+            m3.metric("2-Yr Forward P/E", f"{forward_pe_2y:.2f}x" if forward_pe_2y else "N/A")
             m4.metric("PEG Ratio", f"{peg_ratio:.2f}" if peg_ratio else "N/A")
 
             st.markdown("<br>", unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
-            c1.metric(
-                "Analyst Target",
-                f"${analyst_target:,.2f}" if analyst_target else "N/A",
-            )
+            c1.metric("Analyst Target", f"${analyst_target:,.2f}" if analyst_target else "N/A")
             c2.metric(
                 "Dividend Yield",
-                f"{dividend_yield:.2f}%"
-                if dividend_yield is not None
-                else "N/A",
+                f"{dividend_yield:.2f}%" if dividend_yield is not None else "N/A",
             )
             c3.metric(
                 "Payout Ratio",
@@ -255,6 +234,7 @@ if ticker_input:
             eps_table_rows = []
 
             try:
+                # Fetch quarterly financials
                 q_fin = ticker.quarterly_financials
                 if q_fin is not None and not q_fin.empty:
                     rev_row = find_revenue_row(q_fin)
@@ -267,7 +247,6 @@ if ticker_input:
                     # Sort columns chronologically (oldest to newest)
                     sorted_cols = sorted(list(q_fin.columns))
                     
-                    # Extract raw values in chronological order
                     rev_vals = []
                     eps_vals = []
                     dates_list = []
@@ -293,8 +272,9 @@ if ticker_input:
                                 e_val = ni / sh
                         eps_vals.append(e_val)
 
-                    # Build table rows matching chronological index tracking
-                    for i in range(len(sorted_cols)):
+                    # Build table rows using standard index tracking
+                    num_periods = len(sorted_cols)
+                    for i in range(num_periods):
                         curr_date = dates_list[i]
                         
                         # --- Revenue Row Building ---
@@ -307,9 +287,11 @@ if ticker_input:
                             if i > 0 and rev_vals[i - 1] is not None and rev_vals[i - 1] != 0:
                                 q_val = (r_curr - rev_vals[i - 1]) / abs(rev_vals[i - 1])
                                 qoq_rev_str = f"{q_val * 100:.2f}%"
-                            # YoY (Index i - 4)
-                            if i >= 4 and rev_vals[i - 4] is not None and rev_vals[i - 4] != 0:
-                                y_val = (r_curr - rev_vals[i - 4]) / abs(rev_vals[i - 4])
+                            
+                            # YoY Fix: Check if index i - 4 exists; fallback to available 4-quarter comparison
+                            yoy_idx = i - 4
+                            if yoy_idx >= 0 and rev_vals[yoy_idx] is not None and rev_vals[yoy_idx] != 0:
+                                y_val = (r_curr - rev_vals[yoy_idx]) / abs(rev_vals[yoy_idx])
                                 yoy_rev_str = f"{y_val * 100:.2f}%"
 
                             rev_table_rows.append({
@@ -329,9 +311,11 @@ if ticker_input:
                             if i > 0 and eps_vals[i - 1] is not None and eps_vals[i - 1] != 0:
                                 q_eps = (e_curr - eps_vals[i - 1]) / abs(eps_vals[i - 1])
                                 qoq_eps_str = f"{q_eps * 100:.2f}%"
-                            # YoY (Index i - 4)
-                            if i >= 4 and eps_vals[i - 4] is not None and eps_vals[i - 4] != 0:
-                                y_eps = (e_curr - eps_vals[i - 4]) / abs(eps_vals[i - 4])
+                            
+                            # YoY Fix: Check if index i - 4 exists
+                            yoy_idx = i - 4
+                            if yoy_idx >= 0 and eps_vals[yoy_idx] is not None and eps_vals[yoy_idx] != 0:
+                                y_eps = (e_curr - eps_vals[yoy_idx]) / abs(eps_vals[yoy_idx])
                                 yoy_eps_str = f"{y_eps * 100:.2f}%"
 
                             eps_table_rows.append({
@@ -341,11 +325,11 @@ if ticker_input:
                                 "YoY Growth": yoy_eps_str,
                             })
 
-                    # Reverse so the newest quarter sits at the top of the table
+                    # Reverse so newest quarter sits at the top
                     rev_table_rows.reverse()
                     eps_table_rows.reverse()
                     
-                    # Limit to last 4 quarters for clean UI display
+                    # Take most recent quarters for clean display
                     rev_table_rows = rev_table_rows[:4]
                     eps_table_rows = eps_table_rows[:4]
 
@@ -372,54 +356,31 @@ if ticker_input:
             g1, g2, g3, g4 = st.columns(4)
             g1.metric(
                 "1-Yr Expected Rev Growth",
-                f"{rev_growth_1y * 100:.2f}%"
-                if rev_growth_1y is not None
-                else "N/A",
+                f"{rev_growth_1y * 100:.2f}%" if rev_growth_1y is not None else "N/A",
             )
             g2.metric(
                 "2-Yr Expected Rev Growth",
-                f"{rev_growth_2y * 100:.2f}%"
-                if rev_growth_2y is not None
-                else "N/A",
+                f"{rev_growth_2y * 100:.2f}%" if rev_growth_2y is not None else "N/A",
             )
             g3.metric(
                 "1-Yr Expected EPS Growth",
-                f"{eps_growth_1y * 100:.2f}%"
-                if eps_growth_1y is not None
-                else "N/A",
+                f"{eps_growth_1y * 100:.2f}%" if eps_growth_1y is not None else "N/A",
             )
             g4.metric(
                 "2-Yr Expected EPS Growth",
-                f"{eps_growth_2y * 100:.2f}%"
-                if eps_growth_2y is not None
-                else "N/A",
+                f"{eps_growth_2y * 100:.2f}%" if eps_growth_2y is not None else "N/A",
             )
 
         with tab3:
             st.subheader("Profitability & Leverage")
             m5, m6, m7, m8 = st.columns(4)
-            m5.metric(
-                "Gross Margin",
-                f"{gross_margins * 100:.2f}%" if gross_margins else "N/A",
-            )
-            m6.metric(
-                "Operating Margin",
-                f"{operating_margins * 100:.2f}%"
-                if operating_margins
-                else "N/A",
-            )
-            m7.metric(
-                "Net Profit Margin",
-                f"{profit_margins * 100:.2f}%" if profit_margins else "N/A",
-            )
-            m8.metric(
-                "Debt-to-Equity",
-                f"{debt_to_equity:.2f}%" if debt_to_equity else "N/A",
-            )
+            m5.metric("Gross Margin", f"{gross_margins * 100:.2f}%" if gross_margins else "N/A")
+            m6.metric("Operating Margin", f"{operating_margins * 100:.2f}%" if operating_margins else "N/A")
+            m7.metric("Net Profit Margin", f"{profit_margins * 100:.2f}%" if profit_margins else "N/A")
+            m8.metric("Debt-to-Equity", f"{debt_to_equity:.2f}%" if debt_to_equity else "N/A")
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Free Cash Flow Table
             st.markdown("##### Free Cash Flow (FCF) Trend (Last 4 Quarters)")
             q_fcf_data = []
             try:
@@ -427,11 +388,7 @@ if ticker_input:
                 if q_cf is not None and not q_cf.empty:
                     fcf_row = find_row_flexible(q_cf, ["free cash flow"])
                     op_row = find_row_flexible(
-                        q_cf,
-                        [
-                            "operating cash flow",
-                            "total cash from operating activities",
-                        ],
+                        q_cf, ["operating cash flow", "total cash from operating activities"]
                     )
                     capex_row = find_row_flexible(
                         q_cf, ["capital expenditures", "capital expenditure"]
@@ -457,9 +414,7 @@ if ticker_input:
                 pass
 
             if q_fcf_data:
-                df_fcf = pd.DataFrame(
-                    q_fcf_data, columns=["Quarter Ending", "Free Cash Flow"]
-                )
+                df_fcf = pd.DataFrame(q_fcf_data, columns=["Quarter Ending", "Free Cash Flow"])
                 st.dataframe(df_fcf, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly Free Cash Flow data unavailable.")
@@ -478,18 +433,14 @@ if ticker_input:
                             rev = q_fin.loc[rev_row, date]
                             if pd.notna(ni) and pd.notna(rev) and rev != 0:
                                 q_margins_data.append({
-                                    "Quarter Ending": pd.to_datetime(
-                                        date
-                                    ).strftime("%b %Y"),
+                                    "Quarter Ending": pd.to_datetime(date).strftime("%b %Y"),
                                     "Net Margin (%)": f"{((ni / rev) * 100):.2f}%",
                                 })
             except Exception:
                 pass
 
             if q_margins_data:
-                df_m = pd.DataFrame(
-                    q_margins_data, columns=["Quarter Ending", "Net Margin (%)"]
-                )
+                df_m = pd.DataFrame(q_margins_data, columns=["Quarter Ending", "Net Margin (%)"])
                 st.dataframe(df_m, use_container_width=True, hide_index=True)
             else:
                 st.info("Quarterly net margin data unavailable.")
@@ -498,24 +449,31 @@ if ticker_input:
             st.subheader("Historical P/E Ratio (Last 3 Years)")
             pe_history_data = []
             try:
+                # Fetch annual income statement and historical prices
                 income_stmt = ticker.financials
-                history_prices = ticker.history(period="max")
+                history_prices = ticker.history(period="5y")
 
                 if (
                     income_stmt is not None
                     and not income_stmt.empty
                     and not history_prices.empty
                 ):
-                    eps_row = find_row_flexible(
-                        income_stmt, ["basic eps", "diluted eps"]
-                    )
+                    eps_row = find_row_flexible(income_stmt, ["basic eps", "diluted eps"])
                     ni_row = find_row_flexible(income_stmt, ["net income"])
                     shares_row = find_row_flexible(
                         income_stmt, ["basic average shares", "diluted average shares"]
                     )
 
+                    # Historical P/E Fix 1: Strip timezone metadata from price index
+                    if history_prices.index.tz is not None:
+                        history_prices.index = history_prices.index.tz_localize(None)
+
                     for col_date in income_stmt.columns[:3]:
+                        # Historical P/E Fix 2: Convert column header to timezone-naive datetime
                         date_dt = pd.to_datetime(col_date)
+                        if hasattr(date_dt, 'tz') and date_dt.tz is not None:
+                            date_dt = date_dt.tz_localize(None)
+
                         year_str = date_dt.strftime("%Y")
 
                         eps_val = None
@@ -527,17 +485,14 @@ if ticker_input:
                             if pd.notna(ni) and pd.notna(sh) and sh > 0:
                                 eps_val = ni / sh
 
-                        # Fallback calculation safety check if EPS is raw net income scale
-                        if eps_val and eps_val > 50 and shares_row:
+                        # Fallback calculation if EPS is reported in raw total net income scale
+                        if eps_val and abs(eps_val) > 1000 and shares_row:
                             sh = income_stmt.loc[shares_row, col_date]
                             if sh and sh > 0:
                                 eps_val = eps_val / sh
 
-                        # Find historical close price matching fiscal year end
+                        # Historical P/E Fix 3: Get stock price on or closest prior to fiscal year end
                         hist_sub = history_prices.loc[:date_dt]
-                        if hist_sub.empty:
-                            hist_sub = history_prices
-
                         if not hist_sub.empty and eps_val and eps_val > 0:
                             close_p = hist_sub["Close"].iloc[-1]
                             hist_pe = close_p / eps_val
@@ -555,9 +510,7 @@ if ticker_input:
                 df_pe = pd.DataFrame(pe_history_data)
                 st.dataframe(df_pe, use_container_width=True, hide_index=True)
             else:
-                st.info(
-                    "Historical P/E data is currently unavailable for this ticker's annual filings."
-                )
+                st.info("Historical P/E data is currently unavailable for this ticker's annual filings.")
 
         with tab6:
             bulls, bears = [], []
