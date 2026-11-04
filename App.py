@@ -145,7 +145,7 @@ if ticker_input:
         with col_head2:
             price_str = f"${current_price:,.2f}" if current_price else "N/A"
             range_str = (
-                f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}"
+                f"${fifty_two_low:,.2f} -${fifty_two_high:,.2f}"
                 if (fifty_two_low and fifty_two_high)
                 else "N/A"
             )
@@ -199,10 +199,10 @@ if ticker_input:
         operating_margins = info.get("operatingMargins") or info.get("operatingmargins")
         free_cashflow = info.get("freeCashflow")
 
-        # --- Comprehensive Forward Estimates & 2-Yr P/E Extraction ---
+        # --- Robust Forward Estimates & 2-Yr P/E Extraction with Fallback ---
         rev_growth_1y, rev_growth_2y = None, None
         eps_growth_1y, eps_growth_2y = None, None
-        eps_2y_avg = None
+        eps_1y_avg, eps_2y_avg = None, None
 
         try:
             rev_est = ticker.revenue_estimate
@@ -219,12 +219,10 @@ if ticker_input:
                                     rev_growth_2y = float(val)
                 if rev_growth_1y is None and "+1y" in rev_est.index:
                     val = rev_est.loc["+1y"].get("growth")
-                    if pd.notna(val):
-                        rev_growth_1y = float(val)
+                    if pd.notna(val): rev_growth_1y = float(val)
                 if rev_growth_2y is None and "+2y" in rev_est.index:
                     val = rev_est.loc["+2y"].get("growth")
-                    if pd.notna(val):
-                        rev_growth_2y = float(val)
+                    if pd.notna(val): rev_growth_2y = float(val)
         except Exception:
             pass
 
@@ -247,23 +245,33 @@ if ticker_input:
                             c_lower = str(col).lower()
                             val = earn_est.loc[idx, col]
                             if pd.notna(val):
-                                if "+2y" in c_lower or c_lower == "2y":
+                                if "+1y" in c_lower or c_lower == "1y":
+                                    eps_1y_avg = float(val)
+                                elif "+2y" in c_lower or c_lower == "2y":
                                     eps_2y_avg = float(val)
 
                 if eps_growth_1y is None and "+1y" in earn_est.index:
                     val = earn_est.loc["+1y"].get("growth")
-                    if pd.notna(val):
-                        eps_growth_1y = float(val)
+                    if pd.notna(val): eps_growth_1y = float(val)
                 if eps_growth_2y is None and "+2y" in earn_est.index:
                     val = earn_est.loc["+2y"].get("growth")
-                    if pd.notna(val):
-                        eps_growth_2y = float(val)
+                    if pd.notna(val): eps_growth_2y = float(val)
+                if eps_1y_avg is None and "+1y" in earn_est.index:
+                    val = earn_est.loc["+1y"].get("avg") or earn_est.loc["+1y"].get("mean")
+                    if pd.notna(val): eps_1y_avg = float(val)
                 if eps_2y_avg is None and "+2y" in earn_est.index:
                     val = earn_est.loc["+2y"].get("avg") or earn_est.loc["+2y"].get("mean")
-                    if pd.notna(val):
-                        eps_2y_avg = float(val)
+                    if pd.notna(val): eps_2y_avg = float(val)
         except Exception:
             pass
+
+        # Intelligent Fallbacks if Yahoo API omits 2-year fields
+        if rev_growth_2y is None and rev_growth_1y is not None:
+            rev_growth_2y = rev_growth_1y  # Assume stable growth pace matching year 1
+        if eps_growth_2y is None and eps_growth_1y is not None:
+            eps_growth_2y = eps_growth_1y
+        if eps_2y_avg is None and eps_1y_avg is not None and eps_growth_2y is not None:
+            eps_2y_avg = eps_1y_avg * (1 + eps_growth_2y)
 
         forward_pe_2y = (
             (current_price / eps_2y_avg)
