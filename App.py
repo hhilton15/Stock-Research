@@ -89,20 +89,6 @@ def find_row_flexible(df, keywords):
     return None
 
 
-def extract_estimate_growth(df, period_key):
-    """Safely extracts forward growth decimal from yfinance estimate DataFrames."""
-    if df is not None and not df.empty:
-        if period_key in df.columns and "growth" in df.index:
-            val = df.loc["growth", period_key]
-            if pd.notna(val):
-                return float(val)
-        elif period_key in df.index and "growth" in df.columns:
-            val = df.loc[period_key, "growth"]
-            if pd.notna(val):
-                return float(val)
-    return None
-
-
 # Sidebar Ticker Input
 st.sidebar.title("🔍 Stock Lookup")
 ticker_input = (
@@ -134,7 +120,7 @@ if ticker_input:
         with col_head2:
             price_str = f"${current_price:,.2f}" if current_price else "N/A"
             range_str = (
-                f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}"
+                f"${fifty_two_low:,.2f} -${fifty_two_high:,.2f}"
                 if (fifty_two_low and fifty_two_high)
                 else "N/A"
             )
@@ -177,7 +163,7 @@ if ticker_input:
         operating_margins = info.get("operatingMargins") or info.get("operatingmargins")
         free_cashflow = info.get("freeCashflow")
 
-        # Robust Forward Estimates Extraction
+        # --- Comprehensive Forward Estimates & 2-Yr P/E Extraction ---
         rev_growth_1y, rev_growth_2y = None, None
         eps_growth_1y, eps_growth_2y = None, None
         eps_2y_avg = None
@@ -185,46 +171,59 @@ if ticker_input:
         try:
             rev_est = ticker.revenue_estimate
             if rev_est is not None and not rev_est.empty:
-                growth_row = next((i for i in rev_est.index if 'growth' in str(i).lower()), None)
-                if growth_row is not None:
-                    for col in rev_est.columns:
-                        c_str = str(col).lower()
-                        val = rev_est.loc[growth_row, col]
-                        if pd.notna(val):
-                            if '+1y' in c_str or c_str == '1y' or 'next year' in c_str:
-                                rev_growth_1y = float(val)
-                            elif '+2y' in c_str or c_str == '2y':
-                                rev_growth_2y = float(val)
-                if rev_growth_1y is None:
-                    rev_growth_1y = extract_estimate_growth(rev_est, "+1y")
-                if rev_growth_2y is None:
-                    rev_growth_2y = extract_estimate_growth(rev_est, "+2y")
+                # yfinance format check (Handles both row/col arrangements)
+                for idx in rev_est.index:
+                    if "growth" in str(idx).lower():
+                        for col in rev_est.columns:
+                            c_lower = str(col).lower()
+                            val = rev_est.loc[idx, col]
+                            if pd.notna(val):
+                                if "+1y" in c_lower or c_lower == "1y":
+                                    rev_growth_1y = float(val)
+                                elif "+2y" in c_lower or c_lower == "2y":
+                                    rev_growth_2y = float(val)
+                # Fallback if structure is transposed
+                if rev_growth_1y is None and "+1y" in rev_est.index:
+                    val = rev_est.loc["+1y"].get("growth")
+                    if pd.notna(val): rev_growth_1y = float(val)
+                if rev_growth_2y is None and "+2y" in rev_est.index:
+                    val = rev_est.loc["+2y"].get("growth")
+                    if pd.notna(val): rev_growth_2y = float(val)
         except Exception:
             pass
 
         try:
             earn_est = ticker.earnings_estimate
             if earn_est is not None and not earn_est.empty:
-                growth_row_e = next((i for i in earn_est.index if 'growth' in str(i).lower()), None)
-                if growth_row_e is not None:
-                    for col in earn_est.columns:
-                        c_str = str(col).lower()
-                        val = earn_est.loc[growth_row_e, col]
-                        if pd.notna(val):
-                            if '+1y' in c_str or c_str == '1y' or 'next year' in c_str:
-                                eps_growth_1y = float(val)
-                            elif '+2y' in c_str or c_str == '2y':
-                                eps_growth_2y = float(val)
-                
-                if eps_growth_1y is None:
-                    eps_growth_1y = extract_estimate_growth(earn_est, "+1y")
-                if eps_growth_2y is None:
-                    eps_growth_2y = extract_estimate_growth(earn_est, "+2y")
+                for idx in earn_est.index:
+                    idx_lower = str(idx).lower()
+                    if "growth" in idx_lower:
+                        for col in earn_est.columns:
+                            c_lower = str(col).lower()
+                            val = earn_est.loc[idx, col]
+                            if pd.notna(val):
+                                if "+1y" in c_lower or c_lower == "1y":
+                                    eps_growth_1y = float(val)
+                                elif "+2y" in c_lower or c_lower == "2y":
+                                    eps_growth_2y = float(val)
+                    if "avg" in idx_lower or "mean" in idx_lower:
+                        for col in earn_est.columns:
+                            c_lower = str(col).lower()
+                            val = earn_est.loc[idx, col]
+                            if pd.notna(val):
+                                if "+2y" in c_lower or c_lower == "2y":
+                                    eps_2y_avg = float(val)
 
-                if "+2y" in earn_est.columns and "avg" in earn_est.index:
-                    eps_2y_avg = earn_est.loc["avg", "+2y"]
-                elif len(earn_est.columns) > 1 and "avg" in earn_est.index:
-                    eps_2y_avg = earn_est.loc["avg", earn_est.columns[1]]
+                # Fallback checks if indexes/columns are reversed
+                if eps_growth_1y is None and "+1y" in earn_est.index:
+                    val = earn_est.loc["+1y"].get("growth")
+                    if pd.notna(val): eps_growth_1y = float(val)
+                if eps_growth_2y is None and "+2y" in earn_est.index:
+                    val = earn_est.loc["+2y"].get("growth")
+                    if pd.notna(val): eps_growth_2y = float(val)
+                if eps_2y_avg is None and "+2y" in earn_est.index:
+                    val = earn_est.loc["+2y"].get("avg") or earn_est.loc["+2y"].get("mean")
+                    if pd.notna(val): eps_2y_avg = float(val)
         except Exception:
             pass
 
