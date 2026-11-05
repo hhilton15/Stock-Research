@@ -199,10 +199,10 @@ if ticker_input:
         operating_margins = info.get("operatingMargins") or info.get("operatingmargins")
         free_cashflow = info.get("freeCashflow")
 
-        # --- Robust Forward Estimates & 2-Yr P/E Extraction with Fallback ---
+        # --- Strict Forward Estimates & 2-Yr P/E Extraction (No Fake Copying) ---
         rev_growth_1y, rev_growth_2y = None, None
         eps_growth_1y, eps_growth_2y = None, None
-        eps_1y_avg, eps_2y_avg = None, None
+        eps_2y_avg = None
 
         try:
             rev_est = ticker.revenue_estimate
@@ -245,9 +245,7 @@ if ticker_input:
                             c_lower = str(col).lower()
                             val = earn_est.loc[idx, col]
                             if pd.notna(val):
-                                if "+1y" in c_lower or c_lower == "1y":
-                                    eps_1y_avg = float(val)
-                                elif "+2y" in c_lower or c_lower == "2y":
+                                if "+2y" in c_lower or c_lower == "2y":
                                     eps_2y_avg = float(val)
 
                 if eps_growth_1y is None and "+1y" in earn_est.index:
@@ -256,22 +254,11 @@ if ticker_input:
                 if eps_growth_2y is None and "+2y" in earn_est.index:
                     val = earn_est.loc["+2y"].get("growth")
                     if pd.notna(val): eps_growth_2y = float(val)
-                if eps_1y_avg is None and "+1y" in earn_est.index:
-                    val = earn_est.loc["+1y"].get("avg") or earn_est.loc["+1y"].get("mean")
-                    if pd.notna(val): eps_1y_avg = float(val)
                 if eps_2y_avg is None and "+2y" in earn_est.index:
                     val = earn_est.loc["+2y"].get("avg") or earn_est.loc["+2y"].get("mean")
                     if pd.notna(val): eps_2y_avg = float(val)
         except Exception:
             pass
-
-        # Intelligent Fallbacks if Yahoo API omits 2-year fields
-        if rev_growth_2y is None and rev_growth_1y is not None:
-            rev_growth_2y = rev_growth_1y  # Assume stable growth pace matching year 1
-        if eps_growth_2y is None and eps_growth_1y is not None:
-            eps_growth_2y = eps_growth_1y
-        if eps_2y_avg is None and eps_1y_avg is not None and eps_growth_2y is not None:
-            eps_2y_avg = eps_1y_avg * (1 + eps_growth_2y)
 
         forward_pe_2y = (
             (current_price / eps_2y_avg)
