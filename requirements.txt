@@ -1,5 +1,5 @@
-yfinance>=0.2.54
-requests
-pandas
 streamlit
+pandas
+yfinance>=0.2.54
 curl_cffi
+requests
