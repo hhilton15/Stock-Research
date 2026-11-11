@@ -1,4 +1,3 @@
-import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
@@ -12,7 +11,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS styling for metric cards, sidebar, and touch-scrolling fix
+# Custom CSS styling for metric cards and sidebar
 st.markdown(
     """
 <style>
@@ -24,10 +23,6 @@ st.markdown(
     }
     div[data-testid="stSidebar"] {
         padding-top: 1rem;
-    }
-    /* Forces touch-scrolling to pass through charts smoothly on mobile/touch devices */
-    .stAltairChart, .stAltairChart iframe, .stAltairChart div {
-        touch-action: pan-y !important;
     }
 </style>
 """,
@@ -147,16 +142,20 @@ ticker_input = (
 st.sidebar.markdown("---")
 st.sidebar.caption("Data provided via Yahoo Finance (`yfinance`)")
 
-# Market Indices Ticker Bar at Top of Page
+# Compact Market Indices Ticker Bar at Top of Page
 indices_data = fetch_market_indices()
 if indices_data:
-  cols = st.columns(len(indices_data))
-  for col, (idx_name, idx_vals) in zip(cols, indices_data.items()):
-    col.metric(
-        label=idx_name,
-        value=f"{idx_vals['price']:,.2f}",
-        delta=f"{idx_vals['pct']:+.2f}%",
+  index_items = []
+  for name, vals in indices_data.items():
+    color = "green" if vals["pct"] >= 0 else "red"
+    sign = "+" if vals["pct"] >= 0 else ""
+    index_items.append(
+        f"**{name}**: {vals['price']:,.2f} "
+        f"<span style='color:{color}; font-weight:600;'>{sign}{vals['pct']:.2f}%</span>"
     )
+  st.markdown(
+      " &nbsp;&nbsp;|&nbsp;&nbsp; ".join(index_items), unsafe_allow_html=True
+  )
   st.markdown("---")
 
 if ticker_input:
@@ -693,7 +692,6 @@ if ticker_input:
     with tab5:
       st.subheader("Historical P/E Ratio (Last 3 Years)")
       pe_history_data = []
-      chart_data = []
 
       try:
         income_stmt = ticker.financials
@@ -746,31 +744,12 @@ if ticker_input:
                   "Year-End Price": f"${close_p:,.2f}",
                   "Historical P/E": f"{hist_pe:.2f}x",
               })
-              chart_data.append({"fiscal_year": year_str, "pe_ratio": hist_pe})
       except Exception:
         pass
 
       if pe_history_data:
         df_pe = pd.DataFrame(pe_history_data)
         st.dataframe(df_pe, use_container_width=True, hide_index=True)
-
-        if chart_data:
-          st.markdown("##### Historical P/E Multiple Trend")
-          df_chart = pd.DataFrame(chart_data).sort_values(by="fiscal_year")
-
-          # Clean Altair bar chart with standardized field names and disabled interactivity
-          chart = (
-              alt.Chart(df_chart)
-              .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-              .encode(
-                  x=alt.X("fiscal_year:N", title="Fiscal Year"),
-                  y=alt.Y("pe_ratio:Q", title="P/E Multiple"),
-                  tooltip=["fiscal_year", "pe_ratio"],
-              )
-              .properties(height=300)
-              .interactive(False)
-          )
-          st.altair_chart(chart, use_container_width=True)
       else:
         st.info(
             "Historical P/E data is currently unavailable for this ticker's"
