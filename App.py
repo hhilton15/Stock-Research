@@ -1,3 +1,4 @@
+import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
@@ -709,12 +710,21 @@ if ticker_input:
 
         if chart_data:
           st.markdown("##### Historical P/E Multiple Trend")
-          df_chart = (
-              pd.DataFrame(chart_data)
-              .sort_values(by="Fiscal Year")
-              .set_index("Fiscal Year")
+          df_chart = pd.DataFrame(chart_data).sort_values(by="Fiscal Year")
+
+          # Altair chart with interactivity disabled so touch-scrolling works smoothly
+          chart = (
+              alt.Chart(df_chart)
+              .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+              .encode(
+                  x=alt.X("Fiscal Year:N", title="Fiscal Year"),
+                  y=alt.Y("P/E:Q", title="P/E Multiple"),
+                  tooltip=["Fiscal Year", "P/E"],
+              )
+              .properties(height=300)
+              .interactive(False)
           )
-          st.bar_chart(df_chart["P/E"])
+          st.altair_chart(chart, use_container_width=True)
       else:
         st.info(
             "Historical P/E data is currently unavailable for this ticker's"
