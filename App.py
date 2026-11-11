@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS styling for metric card highlights and touch-scrolling fix
+# Custom CSS styling for metric cards, sidebar, and touch-scrolling fix
 st.markdown(
     """
 <style>
@@ -25,9 +25,9 @@ st.markdown(
     div[data-testid="stSidebar"] {
         padding-top: 1rem;
     }
-    /* Allows smooth vertical scrolling when touching/dragging over charts */
-    .stAltairChart {
-        touch-action: pan-y;
+    /* Forces touch-scrolling to pass through charts smoothly on mobile/touch devices */
+    .stAltairChart, .stAltairChart iframe, .stAltairChart div {
+        touch-action: pan-y !important;
     }
 </style>
 """,
@@ -56,6 +56,36 @@ def fetch_ticker_info(symbol):
     return info
   except Exception:
     return None
+
+
+@st.cache_data(ttl=600)
+def fetch_market_indices():
+  """Fetches daily performance for major market indices."""
+  indices = {
+      "S&P 500": "^GSPC",
+      "DJIA": "^DJI",
+      "Nasdaq": "^IXIC",
+  }
+  data = {}
+  session = get_yf_session()
+  for name, symbol in indices.items():
+    try:
+      t = yf.Ticker(symbol, session=session)
+      hist = t.history(period="2d")
+      if len(hist) >= 2:
+        prev = hist["Close"].iloc[-2]
+        curr = hist["Close"].iloc[-1]
+        pct = ((curr - prev) / prev) * 100
+        data[name] = {"price": curr, "pct": pct}
+      else:
+        info = t.info
+        p = info.get("regularMarketPrice") or info.get("currentPrice")
+        pct = info.get("regularMarketChangePercent")
+        if p and pct:
+          data[name] = {"price": p, "pct": pct}
+    except Exception:
+      pass
+  return data
 
 
 def smart_format(val):
@@ -116,6 +146,18 @@ ticker_input = (
 )
 st.sidebar.markdown("---")
 st.sidebar.caption("Data provided via Yahoo Finance (`yfinance`)")
+
+# Market Indices Ticker Bar at Top of Page
+indices_data = fetch_market_indices()
+if indices_data:
+  cols = st.columns(len(indices_data))
+  for col, (idx_name, idx_vals) in zip(cols, indices_data.items()):
+    col.metric(
+        label=idx_name,
+        value=f"{idx_vals['price']:,.2f}",
+        delta=f"{idx_vals['pct']:+.2f}%",
+    )
+  st.markdown("---")
 
 if ticker_input:
   info = fetch_ticker_info(ticker_input)
@@ -704,7 +746,7 @@ if ticker_input:
                   "Year-End Price": f"${close_p:,.2f}",
                   "Historical P/E": f"{hist_pe:.2f}x",
               })
-              chart_data.append({"Fiscal Year": year_str, "P/E": hist_pe})
+              chart_data.append({"fiscal_year": year_str, "pe_ratio": hist_pe})
       except Exception:
         pass
 
@@ -714,16 +756,16 @@ if ticker_input:
 
         if chart_data:
           st.markdown("##### Historical P/E Multiple Trend")
-          df_chart = pd.DataFrame(chart_data).sort_values(by="Fiscal Year")
+          df_chart = pd.DataFrame(chart_data).sort_values(by="fiscal_year")
 
-          # Altair chart with interactivity disabled
+          # Clean Altair bar chart with standardized field names and disabled interactivity
           chart = (
               alt.Chart(df_chart)
               .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
               .encode(
-                  x=alt.X("Fiscal Year:N", title="Fiscal Year"),
-                  y=alt.Y("P/E:Q", title="P/E Multiple"),
-                  tooltip=["Fiscal Year", "P/E"],
+                  x=alt.X("fiscal_year:N", title="Fiscal Year"),
+                  y=alt.Y("pe_ratio:Q", title="P/E Multiple"),
+                  tooltip=["fiscal_year", "pe_ratio"],
               )
               .properties(height=300)
               .interactive(False)
