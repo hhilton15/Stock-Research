@@ -129,7 +129,7 @@ if ticker_input:
     fifty_two_low = info.get("fiftyTwoWeekLow")
     fifty_two_high = info.get("fiftyTwoWeekHigh")
 
-    # Calculate or extract daily change percentage
+    # Daily change calculation
     daily_change_pct = info.get("regularMarketChangePercent")
     if daily_change_pct is None:
       try:
@@ -141,7 +141,7 @@ if ticker_input:
       except Exception:
         pass
 
-    # Calculate Year-to-Date (YTD) percentage change
+    # YTD change calculation
     ytd_change_pct = None
     try:
       current_year = pd.Timestamp.now().year
@@ -162,7 +162,7 @@ if ticker_input:
     with col_head2:
       price_str = f"${current_price:,.2f}" if current_price else "N/A"
       range_str = (
-          f"${fifty_two_low:,.2f} -${fifty_two_high:,.2f}"
+          f"${fifty_two_low:,.2f} - ${fifty_two_high:,.2f}"
           if (fifty_two_low and fifty_two_high)
           else "N/A"
       )
@@ -222,7 +222,7 @@ if ticker_input:
     )
     free_cashflow = info.get("freeCashflow")
 
-    # Strict Forward Estimates & 2-Yr P/E Extraction
+    # Forward Estimates
     rev_growth_1y, rev_growth_2y = None, None
     eps_growth_1y, eps_growth_2y = None, None
     eps_2y_avg = None
@@ -296,6 +296,11 @@ if ticker_input:
         else None
     )
 
+    # Calculate Analyst Target Upside/Downside
+    target_upside = None
+    if analyst_target and current_price and current_price > 0:
+      target_upside = ((analyst_target - current_price) / current_price) * 100
+
     # Tabbed Layout
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Valuation & Income",
@@ -323,6 +328,9 @@ if ticker_input:
       c1.metric(
           "Analyst Target",
           f"${analyst_target:,.2f}" if analyst_target else "N/A",
+          delta=f"{target_upside:+.2f}% Potential"
+          if target_upside is not None
+          else None,
       )
       c2.metric(
           "Dividend Yield",
@@ -638,6 +646,8 @@ if ticker_input:
     with tab5:
       st.subheader("Historical P/E Ratio (Last 3 Years)")
       pe_history_data = []
+      chart_data = []
+
       try:
         income_stmt = ticker.financials
         history_prices = ticker.history(period="5y")
@@ -689,12 +699,22 @@ if ticker_input:
                   "Year-End Price": f"${close_p:,.2f}",
                   "Historical P/E": f"{hist_pe:.2f}x",
               })
+              chart_data.append({"Fiscal Year": year_str, "P/E": hist_pe})
       except Exception:
         pass
 
       if pe_history_data:
         df_pe = pd.DataFrame(pe_history_data)
         st.dataframe(df_pe, use_container_width=True, hide_index=True)
+
+        if chart_data:
+          st.markdown("##### Historical P/E Multiple Trend")
+          df_chart = (
+              pd.DataFrame(chart_data)
+              .sort_values(by="Fiscal Year")
+              .set_index("Fiscal Year")
+          )
+          st.bar_chart(df_chart["P/E"])
       else:
         st.info(
             "Historical P/E data is currently unavailable for this ticker's"
