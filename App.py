@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS styling for metric card highlights
+# Custom CSS styling for metric card highlights and touch-scrolling fix
 st.markdown(
     """
 <style>
@@ -24,6 +24,10 @@ st.markdown(
     }
     div[data-testid="stSidebar"] {
         padding-top: 1rem;
+    }
+    /* Allows smooth vertical scrolling when touching/dragging over charts */
+    .stAltairChart {
+        touch-action: pan-y;
     }
 </style>
 """,
@@ -712,7 +716,7 @@ if ticker_input:
           st.markdown("##### Historical P/E Multiple Trend")
           df_chart = pd.DataFrame(chart_data).sort_values(by="Fiscal Year")
 
-          # Altair chart with interactivity disabled so touch-scrolling works smoothly
+          # Altair chart with interactivity disabled
           chart = (
               alt.Chart(df_chart)
               .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
