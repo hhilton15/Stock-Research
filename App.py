@@ -175,6 +175,15 @@ if ticker_input:
     fifty_two_low = info.get("fiftyTwoWeekLow")
     fifty_two_high = info.get("fiftyTwoWeekHigh")
 
+    # Business profile details
+    business_summary = info.get(
+        "longBusinessSummary", "No business summary available."
+    )
+    sector = info.get("sector", "N/A")
+    industry = info.get("industry", "N/A")
+    employees = info.get("fullTimeEmployees")
+    website = info.get("website", "N/A")
+
     # Daily change calculation
     daily_change_pct = info.get("regularMarketChangePercent")
     if daily_change_pct is None:
@@ -347,8 +356,9 @@ if ticker_input:
     if analyst_target and current_price and current_price > 0:
       target_upside = ((analyst_target - current_price) / current_price) * 100
 
-    # Tabbed Layout
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    # Tabbed Layout (Including Business Overview Tab)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "🏢 Business Overview",
         "📊 Valuation & Income",
         "📈 Growth Metrics",
         "💰 Profitability & Cash Flow",
@@ -358,6 +368,23 @@ if ticker_input:
     ])
 
     with tab1:
+      st.subheader("Company Profile & Business Model")
+      b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+      b_col1.metric("Sector", sector)
+      b_col2.metric("Industry", industry)
+      b_col3.metric(
+          "Employees", f"{employees:,.0f}" if employees else "N/A"
+      )
+      if website != "N/A":
+        b_col4.markdown(f"**Website:**\n[{website}]({website})")
+      else:
+        b_col4.metric("Website", "N/A")
+
+      st.markdown("<br>", unsafe_allow_html=True)
+      st.markdown("##### Business Synopsis & Revenue Model")
+      st.write(business_summary)
+
+    with tab2:
       st.subheader("Valuation & Pricing")
       m1, m2, m3, m4 = st.columns(4)
       m1.metric("Trailing P/E", f"{trailing_pe:.2f}x" if trailing_pe else "N/A")
@@ -387,7 +414,7 @@ if ticker_input:
           f"{payout_ratio:.2f}%" if payout_ratio is not None else "N/A",
       )
 
-    with tab2:
+    with tab3:
       st.subheader("Annual Financial Trends & Forward Expectations")
 
       annual_table_rows = []
@@ -490,7 +517,7 @@ if ticker_input:
           f"{eps_growth_2y * 100:.2f}%" if eps_growth_2y is not None else "N/A",
       )
 
-    with tab3:
+    with tab4:
       st.subheader("Profitability & Leverage")
       m5, m6, m7, m8 = st.columns(4)
       m5.metric(
@@ -553,7 +580,7 @@ if ticker_input:
       else:
         st.info("Quarterly Free Cash Flow data unavailable.")
 
-    with tab4:
+    with tab5:
       st.subheader("Quarterly Data & Performance Trends")
 
       rev_table_rows = []
@@ -689,7 +716,7 @@ if ticker_input:
       else:
         st.info("Quarterly net margin data unavailable.")
 
-    with tab5:
+    with tab6:
       st.subheader("Historical P/E Ratio (Last 3 Years)")
       pe_history_data = []
 
@@ -756,7 +783,7 @@ if ticker_input:
             " annual filings."
         )
 
-    with tab6:
+    with tab7:
       bulls, bears = [], []
 
       if profit_margins:
